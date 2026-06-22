@@ -1198,13 +1198,18 @@ function renderReminders() {
       html += `<div class="remind-card" style="${isArrived?'border:2px solid var(--green);background:var(--green-bg)':''}">
         <div class="remind-card-top">
           <div class="remind-name">${c.name}</div>
-          <div class="remind-time">⏰ ${fmtTime(c.trial)}</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <div class="remind-time">⏰ ${fmtTime(c.trial)}</div>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+          </div>
         </div>
         <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
           <span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>
           ${sent?'<span style="background:var(--pink-bg);color:var(--pink);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">🩷 Напомнили</span>':''}
           ${isArrived?'<span style="background:var(--green-bg);color:var(--green);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">✅ Дошли!</span>':''}
         </div>
+        ${c.notes?`<div class="card-notes" style="margin-bottom:8px;">${c.notes}</div>`:''}
         <div class="msg-box">${msg}</div>
         ${contactButtons(c, true, msg)}
         <div class="remind-actions" style="margin-bottom:8px;">
@@ -1216,9 +1221,9 @@ function renderReminders() {
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button onclick="quickStatus(${c.id},'arrived',1)" style="flex:1;background:var(--green-bg);color:var(--green);border:1.5px solid var(--green);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">👣 Дошли</button>
             <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-            <button onclick="quickStatus(${c.id},'reschedule',3)" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Не пришли</button>
+            <button onclick="markNotArrived(${c.id})" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не пришли</button>
           </div>
-          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить последнее действие</button>` : ''}
+          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
         </div>
       </div>`;
     });
@@ -1243,7 +1248,11 @@ function renderReminders() {
       html += `<div class="remind-card" ${isLater?'style="border:2px solid var(--purple);background:var(--purple-bg);"':''}>
         <div class="remind-card-top">
           <div class="remind-name">${c.name}</div>
-          <span style="${s.pill};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${s.label}</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="${s.pill};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${s.label}</span>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+          </div>
         </div>
         <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
           ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
@@ -1258,10 +1267,10 @@ function renderReminders() {
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-            <button onclick="quickStatus(${c.id},'reschedule',2)" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перезвонить</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перезвонить</button>
             <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
           </div>
-          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить последнее действие</button>` : ''}
+          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
         </div>` : isLater ? `
         <div style="border-top:1px solid var(--border);padding-top:10px;">
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
@@ -1273,17 +1282,111 @@ function renderReminders() {
           </div>
         </div>` : `
         <div style="border-top:1px solid var(--border);padding-top:10px;">
-          <button onclick="openLogModal(${c.id})" style="width:100%;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Отметить звонок</button>
+          <div style="display:flex;gap:8px;">
+            <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Записать итог</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перенести</button>
+          </div>
         </div>`}
       </div>`;
     });
     html += `</div>`;
   }
 
+  // ── БЛОК 3: БУДУЩИЕ ЗАДАЧИ ──
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0,0,0,0);
+
+  // Собираем все будущие задачи (nextCall > сегодня + trial > сегодня + abNotifyDate > сегодня)
+  const futureMap = {}; // ключ: YYYY-MM-DD → массив задач
+
+  clients.forEach(c => {
+    // nextCall в будущем
+    if (c.nextCall) {
+      const d = new Date(c.nextCall);
+      if (d >= tomorrow) {
+        const key = d.toISOString().split('T')[0];
+        if (!futureMap[key]) futureMap[key] = [];
+        futureMap[key].push({ c, type: 'call', time: d });
+      }
+    }
+    // trial в будущем
+    if (c.trial) {
+      const d = new Date(c.trial);
+      if (d >= tomorrow) {
+        const key = d.toISOString().split('T')[0];
+        if (!futureMap[key]) futureMap[key] = [];
+        futureMap[key].push({ c, type: 'trial', time: d });
+      }
+    }
+    // abNotifyDate в будущем
+    if (c.abNotifyDate) {
+      const d = new Date(c.abNotifyDate);
+      if (d >= tomorrow) {
+        const key = d.toISOString().split('T')[0];
+        if (!futureMap[key]) futureMap[key] = [];
+        futureMap[key].push({ c, type: 'abon', time: d });
+      }
+    }
+  });
+
+  const futureDays = Object.keys(futureMap).sort();
+
+  if (futureDays.length) {
+    html += `<div style="margin-top:16px;">
+      <div style="font-size:14px;font-weight:800;color:var(--ocean);margin-bottom:12px;">📅 Будущие задачи (${futureDays.length} дней)</div>`;
+
+    futureDays.forEach(dateKey => {
+      const tasks = futureMap[dateKey].sort((a,b) => a.time - b.time);
+      const d = new Date(dateKey);
+      const dayName = d.toLocaleDateString('ru-RU',{weekday:'short',day:'2-digit',month:'short'});
+      const isThisWeek = (d - new Date()) < 7 * 86400000;
+      const dotColor = tasks.length >= 5 ? 'var(--red)' : tasks.length >= 3 ? 'var(--orange)' : 'var(--green)';
+      const dayId = 'future-' + dateKey;
+
+      html += `<div style="background:white;border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+        <div onclick="toggleFutureDay('${dayId}')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <span style="font-weight:700;font-size:13px;color:var(--ocean);">${dayName}</span>
+            ${isThisWeek?`<span style="background:var(--foam);color:var(--wave);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px;">скоро</span>`:''}
+          </div>
+          <div style="font-size:12px;font-weight:700;color:${dotColor};">${tasks.length} задач ▼</div>
+        </div>
+        <div id="${dayId}" style="display:none;border-top:1px solid var(--border);padding:8px 14px 12px;">`;
+
+      tasks.forEach(({c, type}) => {
+        const s = STATUS_MAP[c.status];
+        const typeIcon = type === 'trial' ? '🎯' : type === 'abon' ? '🔔' : '📞';
+        const typeLabel = type === 'trial' ? 'Пробное' : type === 'abon' ? 'Абонемент' : 'Звонок';
+        const timeStr = type === 'trial' ? fmtTime(c.trial) : type === 'abon' ? '' : fmtTime(c.nextCall);
+        html += `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f5f5f5;">
+          <div style="font-size:14px;">${typeIcon}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div>
+            <div style="font-size:11px;color:var(--muted);">${typeLabel}${timeStr?' в '+timeStr:''} · <span style="${s?.pill||''};border-radius:4px;padding:1px 5px;">${s?.label||c.status}</span></div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button onclick="openCallbackModal(${c.id})" style="background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;white-space:nowrap;">📅 Дату</button>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;">⚙️</button>
+          </div>
+        </div>`;
+      });
+
+      html += `</div></div>`;
+    });
+
+    html += `</div>`;
+  }
+
   el.innerHTML = html;
 }
 
-// ============ ОБЗВОН ============
+function toggleFutureDay(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
 // Группировка: Перезаписать → Дошедшие → Переговоры → Не дозвонились → Вернутся → Новые → На пробное
 const OBZVON_GROUPS = [
   { id:'reschedule', title:'🔄 Перезаписать',    hint:'Не пришли на пробное — позвонить и записать снова' },
@@ -1409,32 +1512,66 @@ function renderObzvon() {
   const activeCount = clients.filter(c=>c.status!=='bought'&&c.status!=='declined'&&c.status!=='later').length;
 
   // Строим список всех лидов заранее (без вложенных шаблонных строк)
-  const allLeadsRows = clients
+  // Приоритет статусов для сортировки в общем списке
+  const STATUS_PRIORITY = {
+    arrived: 1, reschedule: 2, waiting: 3, callback: 4, noanswer: 5, new: 6, trial: 7
+  };
+
+  const allLeads = clients
     .filter(c => c.status!=='bought' && c.status!=='declined' && c.status!=='later')
     .sort((a,b) => {
+      const pa = STATUS_PRIORITY[a.status] || 9;
+      const pb = STATUS_PRIORITY[b.status] || 9;
+      if (pa !== pb) return pa - pb;
       if (!a.nextCall && !b.nextCall) return 0;
       if (!a.nextCall) return 1;
       if (!b.nextCall) return -1;
       return new Date(a.nextCall) - new Date(b.nextCall);
-    })
-    .map((c,i) => {
-      const s = STATUS_MAP[c.status];
+    });
+
+  // Группируем по статусу
+  const leadGroups = {};
+  allLeads.forEach(c => {
+    const key = c.status;
+    if (!leadGroups[key]) leadGroups[key] = [];
+    leadGroups[key].push(c);
+  });
+
+  const GROUP_LABELS = {
+    arrived: '👣 Дошедшие',
+    reschedule: '🔄 Перезаписать',
+    waiting: '📨 Ждём ответа',
+    callback: '🔄 Перезвонить',
+    noanswer: '📵 Не дозвонились',
+    new: '🆕 Новые',
+    trial: '🎯 На пробное',
+  };
+
+  let allLeadsRows = '';
+  let rowNum = 1;
+  Object.keys(GROUP_LABELS).forEach(statusKey => {
+    const group = leadGroups[statusKey];
+    if (!group || !group.length) return;
+    const s = STATUS_MAP[statusKey];
+    allLeadsRows += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);letter-spacing:0.5px;padding:8px 0 4px;">'
+      + GROUP_LABELS[statusKey] + ' (' + group.length + ')</div>';
+    group.forEach(c => {
       const nextStr = c.nextCall
         ? new Date(c.nextCall).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'}) + ' ' + fmtTime(c.nextCall)
         : '—';
       const isOd = isOverdue(c);
       const color = isOd ? '#ff8a80' : '#a5d6a7';
       const prefix = isOd ? '🔴 ' : '';
-      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.1);">'
-        + '<div style="font-size:10px;color:rgba(255,255,255,0.4);min-width:16px;">' + (i+1) + '</div>'
+      allLeadsRows += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.07);">'
+        + '<div style="font-size:10px;color:rgba(255,255,255,0.3);min-width:18px;">' + rowNum++ + '</div>'
         + '<div style="flex:1;min-width:0;">'
-        + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + c.name + '</div>'
-        + '<div style="font-size:10px;opacity:0.6;">' + (s ? s.label : c.status) + '</div>'
+        + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + prefix + c.name + '</div>'
         + '</div>'
-        + '<div style="font-size:11px;color:' + color + ';font-weight:600;white-space:nowrap;">' + prefix + nextStr + '</div>'
+        + '<div style="font-size:11px;color:' + color + ';font-weight:600;white-space:nowrap;">' + nextStr + '</div>'
         + '<button onclick="openEditModal(' + c.id + ')" style="background:rgba(255,255,255,0.15);border:none;border-radius:6px;padding:4px 8px;font-size:11px;color:white;cursor:pointer;">⚙️</button>'
         + '</div>';
-    }).join('');
+    });
+  });
 
   let html = `<div style="background:linear-gradient(135deg,#1a3a5c,#0d2440);border-radius:14px;padding:16px;color:white;margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -2423,17 +2560,18 @@ function markNotArrived(id) {
   clients[idx]._prevStatus = clients[idx].status;
   clients[idx]._prevNextCall = clients[idx].nextCall||'';
   clients[idx].status = 'reschedule';
-  clients[idx].nextCall = defaultNextCall(3);
+  clients[idx].nextCall = defaultNextCall(1); // следующий день в 9:00
   clients[idx].updatedAt = new Date().toISOString();
   if(!clients[idx].history) clients[idx].history=[];
   clients[idx].history.push({
     date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
-    result:'❌ Не пришли на пробное. Напоминание через 3 дня.',
+    result:'❌ Не пришли на пробное. Позвонить завтра в 9:00.',
     newStatus:'reschedule', nextCall: clients[idx].nextCall
   });
   save(); updateExportBadge();
-  showToast('Не пришли — напомним через 3 дня 📅');
+  showToast('Не пришли — задача на завтра в 9:00 📅');
   if(activeTab==='trial_hub') renderTrialHub();
+  else if(activeTab==='remind') renderReminders();
   else render();
 }
 
