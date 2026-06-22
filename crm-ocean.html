@@ -1439,7 +1439,9 @@ function changeStatusInline(id, newStatus) {
   });
   save(); updateExportBadge();
   showToast(`${label}`);
-  if (activeTab === 'obzvon') renderObzvon();
+  if (activeTab === 'remind') renderReminders();
+  else if (activeTab === 'obzvon') renderObzvon();
+  else if (activeTab === 'trial_hub') renderTrialHub();
   else if (activeTab === 'table') renderTable();
   else render();
 }
