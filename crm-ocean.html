@@ -871,7 +871,7 @@ function contactButtons(c, includeCall = true, msg = '') {
   const digits9 = rawPhone.replace(/^[78]/,'');
   const phone89 = '8' + digits9;
   const telLink = hasPhone ? `tel:${phone89}` : null;
-  const smsLink = hasPhone ? `sms:${phone89}${msg?`;body=${encodeURIComponent(msg)}`:''}` : null;
+  const smsLink = hasPhone ? `sms:${phone89}${msg?`?body=${encodeURIComponent(msg)}`:''}` : null;
   const waLink = hasPhone ? `https://wa.me/7${digits9}${msg?`?text=${encodeURIComponent(msg)}`:''}` : null;
   const tgLink = tgHandle
     ? `https://t.me/${tgHandle}`
