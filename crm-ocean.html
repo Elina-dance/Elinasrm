@@ -342,6 +342,38 @@
   </div>
 </div>
 
+<!-- TASK MODAL -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📌 Поставить задачу</span>
+      <button class="btn-close" onclick="closeModal('task-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:var(--foam);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--wave);font-weight:600;">
+        <strong id="task-client-name"></strong>
+      </div>
+      <div class="form-group">
+        <label>Дата задачи *</label>
+        <input id="task-date" type="datetime-local">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px;">
+          <button type="button" onclick="setTaskPreset(0)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">Сегодня</button>
+          <button type="button" onclick="setTaskPreset(1)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">Завтра</button>
+          <button type="button" onclick="setTaskPreset(3)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">Через 3 дня</button>
+          <button type="button" onclick="setTaskPreset(7)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">Неделя</button>
+          <button type="button" onclick="setTaskPreset(14)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">2 недели</button>
+          <button type="button" onclick="setTaskPreset(30)" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">Месяц</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Что нужно сделать * <span style="color:var(--red);font-size:11px;">(обязательно)</span></label>
+        <textarea id="task-comment" rows="3" placeholder="Например: позвонить уточнить продление, отправить расписание, узнать как прошло занятие..."></textarea>
+      </div>
+      <button class="btn-save" onclick="saveTask()" style="background:var(--ocean);">📌 Сохранить задачу</button>
+    </div>
+  </div>
+</div>
+
 <!-- LATER DATE MODAL -->
 <div class="modal-overlay" id="later-modal">
   <div class="modal">
@@ -390,6 +422,15 @@
       <div class="form-group">
         <label>Фамилия и имя ребёнка</label>
         <input id="ab-child" placeholder="Например: Иванова Соня">
+      </div>
+      <div class="form-group">
+        <label>День рождения ребёнка</label>
+        <input id="ab-birthday" type="date" oninput="updateAgePreview()">
+        <div id="ab-age-preview" style="display:none;margin-top:6px;background:var(--foam);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--wave);font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label>Имя мамы (для СМС продления)</label>
+        <input id="ab-mom" placeholder="Например: Анна">
       </div>
       <div class="form-group">
         <label>Группа</label>
@@ -444,6 +485,11 @@
       <div class="form-group">
         <label>Заметки</label>
         <textarea id="ab-notes" placeholder="Особенности, договорённости..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>📨 СМС для продления (редактируй под себя)</label>
+        <textarea id="ab-renewal-sms" rows="4" style="font-size:13px;line-height:1.6;"></textarea>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Сохраняется и используется в напоминаниях об окончании абонемента</div>
       </div>
       <button class="btn-save" onclick="saveAbonement()" style="background:var(--pink);">🩷 Сохранить</button>
     </div>
@@ -714,7 +760,76 @@ const INITIAL_DATA = [
   {id:181,name:"Нарэ 4,2 г. — мама Ася",phone:"89284471493",group:"Малыши",channel:"Обычное смс",trial:"",status:"noanswer",notes:"Временно не обслуживается. Попробовать позже.",nextCall:"2026-06-25T09:00",history:[{date:"11.06.26",result:"📵 Временно не обслуживается.",newStatus:"noanswer",nextCall:""}]},
   {id:182,name:"Варя 5 л. — мама Наталья (д/с 81)",phone:"89184077706",group:"Малыши",channel:"Обычное смс",trial:"",status:"noanswer",notes:"Не дозвонились 11.06.",nextCall:"2026-06-23T09:00",history:[{date:"11.06.26",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:""}]},
   {id:183,name:"Николь 4,5 г. — бабушка Неля, мама Елизавета",phone:"89189122095",group:"Малыши",channel:"Обычное смс",trial:"",status:"noanswer",notes:"Не дозвонились 11.06.",nextCall:"2026-06-23T09:00",history:[{date:"11.06.26",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:""}]},
-  {id:184,name:"Нина — мама Василисы 6 л. (доп)",phone:"89136074747",group:"Младшие",channel:"Рабочий тг",trial:"2026-06-24T18:00",status:"trial",notes:"24.06 в 18:00. Рабочий тг.",nextCall:"",history:[{date:"16.06.26",result:"🎯 Записаны на 24.06 в 18:00.",newStatus:"trial",nextCall:""}]}
+  {id:184,name:"Нина — мама Василисы 6 л. (доп)",phone:"89136074747",group:"Младшие",channel:"Рабочий тг",trial:"2026-06-24T18:00",status:"trial",notes:"24.06 в 18:00. Рабочий тг.",nextCall:"",history:[{date:"16.06.26",result:"🎯 Записаны на 24.06 в 18:00.",newStatus:"trial",nextCall:""}]},
+
+  // ── ИНДИВИДУАЛЬНЫЕ ──
+  {id:185,name:"Оксана (индивидуально)",phone:"89882374797",group:"Средние",channel:"Рабочий тг",status:"bought",abChild:"Оксана",abMom:"Оксана",abGroup:"Индивидуальные",abStart:"2026-06-01",abEnd:"2026-06-30",abAmount:"6000",abNotes:"Оплата разово 2800р. Продление ✔️",abRenewalSms:"Добрый день, Оксана❣️\nНапоминаю, у Оксаны закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:186,name:"Натали (индивидуально)",phone:"89667713986",group:"Средние",channel:"Рабочий тг",status:"bought",abChild:"Натали",abMom:"Натали",abGroup:"Индивидуальные",abStart:"2026-06-01",abEnd:"2026-06-30",abAmount:"5600",abNotes:"Оплата разово 2800р. Продление ✔️",abRenewalSms:"Добрый день, Натали❣️\nНапоминаю, у Натали закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:187,name:"Настя (индивидуально)",phone:"89312294032",group:"Средние",channel:"Рабочий тг",status:"bought",abChild:"Настя",abMom:"Настя",abGroup:"Индивидуальные",abStart:"2026-06-13",abEnd:"2026-07-13",abAmount:"9800",abNotes:"Абонемент на 4 занятия. 13.06 — 2 занятия с Яной. Продление ✔️",abRenewalSms:"Добрый день, Настя❣️\nНапоминаю, у Насти закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+
+  // ── МАЛЫШИ ──
+  {id:188,name:"Полина — бабушка Любовь",phone:"89615285282",group:"Малыши",channel:"Обычное смс",status:"bought",abChild:"Полина",abMom:"Любовь",abGroup:"Малыши",abStart:"2026-05-30",abEnd:"2026-06-24",abDays:[2,6],abAmount:"6000",abNotes:"Вт/Сб 2 раза. Без галочки — уточнить продление.",abRenewalSms:"Добрый день, Любовь❣️\nНапоминаю, у Полины закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-24T09:00",history:[]},
+  {id:189,name:"Вера — папа Иван",phone:"@redburgerking",group:"Малыши",channel:"Тг @redburgerking",status:"bought",abChild:"Вера",abMom:"Вера",abGroup:"Малыши",abStart:"2026-05-26",abEnd:"2026-07-25",abDays:[2,6],abAmount:"6000",abNotes:"Вт/Сб 2 раза. 26.05-20.06, 2 заморозки, 30.06-25.07. Продление ✔️. Задача: взять номер мамы! Тг папы: @redburgerking",abRenewalSms:"Добрый день, Вера❣️\nНапоминаю, у Веры закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-25T09:00",history:[{date:"06.26",result:"⚠️ Взять номер мамы Веры!",newStatus:"bought",nextCall:"2026-06-25T09:00"}]},
+  {id:190,name:"Люба Недова — мама Ольга",phone:"89137700053",group:"Малыши",channel:"Обычное смс",status:"bought",abChild:"Люба Недова",abMom:"Ольга",abGroup:"Малыши",abStart:"2026-06-06",abEnd:"2026-06-30",abDays:[2,6],abAmount:"5500",abNotes:"Вт/Сб 2 раза. 6.06-30.06. Продление ✔️",abRenewalSms:"Добрый день, Ольга❣️\nНапоминаю, у Любы закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:191,name:"Марина Ларионова — мама Анастасия",phone:"@azurespruce",group:"Малыши",channel:"Тг @azurespruce",status:"bought",abChild:"Марина Ларионова",abMom:"Анастасия",abGroup:"Малыши",abStart:"2026-06-16",abEnd:"2026-07-07",abDays:[2],abAmount:"3200",abNotes:"Вт 1 раз в неделю. 16.06-7.07. Могут только в будни, на выходных у бабушки. Тг: @azurespruce. Доп. тел: +7 988 161-90-26. Продление ✔️",abRenewalSms:"Добрый день, Анастасия❣️\nНапоминаю, у Марины закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:192,name:"Ксюша — мама Дарья",phone:"@dasha_serg8",group:"Малыши",channel:"Тг @dasha_serg8",status:"later",notes:"Приедут 30 июня. Внесли 1000р. Остаток 4500р. Тг мамы: @dasha_serg8",nextCall:"2026-06-30T09:00",history:[{date:"06.26",result:"⏳ Приедут 30 июня. Аванс 1000р.",newStatus:"later",nextCall:"2026-06-30T09:00"}]},
+  {id:193,name:"Ариэлла — мама",phone:"",group:"Малыши",channel:"Обычное смс",status:"later",notes:"Вт 1 раз. 14.04-5.05. Болеют. Уточнить когда вернутся.",nextCall:"2026-07-01T09:00",history:[{date:"06.26",result:"⏳ Болеют. Перезвонить в июле.",newStatus:"later",nextCall:"2026-07-01T09:00"}]},
+  {id:194,name:"Мирабелла — мама",phone:"",group:"Малыши",channel:"Обычное смс",status:"later",notes:"Вт/Сб 2 раза. 23.05-6.06. Первый абонемент 5 занятий перед отъездом. Узнать когда приедут.",nextCall:"2026-07-01T09:00",history:[{date:"06.26",result:"⏳ Уехали. Узнать когда приедут.",newStatus:"later",nextCall:"2026-07-01T09:00"}]},
+  {id:195,name:"Мирон — мама Екатерина",phone:"@Katya040616",group:"Малыши",channel:"Тг @Katya040616",status:"bought",abChild:"Мирон",abMom:"Екатерина",abGroup:"Малыши",abStart:"2026-05-25",abEnd:"2026-06-26",abDays:[2,6],abAmount:"6000",abNotes:"Вт/Сб 2 раза. 25.04-19.05, 26.05. Тг: @Katya040616. Доп. тел: +7 938 459 9500",abRenewalSms:"Добрый день, Екатерина❣️\nНапоминаю, у Мирона закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-26T09:00",history:[]},
+
+  // ── МЛАДШИЕ ──
+  {id:196,name:"Александра Петрова — мама Наталья",phone:"89885082694",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Александра Петрова",abMom:"Наталья",abGroup:"Младшие",abStart:"2026-06-10",abEnd:"2026-09-05",abDays:[3,6],abAmount:"4600",abNotes:"Ср/Сб 2 раза. 10.06-5.09. Летний абонемент ✅. Папа Иван.",abRenewalSms:"Добрый день, Наталья❣️\nНапоминаю, у Александры закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:197,name:"Есения Черкасюк — мама Ольга",phone:"89615174204",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Есения Черкасюк",abMom:"Ольга",abGroup:"Младшие",abStart:"2026-06-06",abEnd:"2026-07-02",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 6.06-2.07. Предложить летний абонемент! Продление ✔️",abRenewalSms:"Добрый день, Ольга❣️\nНапоминаю, у Есении закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-07-01T09:00",history:[{date:"06.26",result:"📨 Предложить летний абонемент 2.07",newStatus:"bought",nextCall:"2026-07-01T09:00"}]},
+  {id:198,name:"Ксения Грицай — мама Анастасия",phone:"89614911139",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Ксения Грицай",abMom:"Анастасия",abGroup:"Младшие",abStart:"2026-05-27",abEnd:"2026-08-24",abDays:[3,6],abAmount:"4600",abNotes:"Ср/Сб 2 раза. 27.05-24.08. Летний ✅",abRenewalSms:"Добрый день, Анастасия❣️\nНапоминаю, у Ксении закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:199,name:"Алина Тесленко — мама Татьяна",phone:"89384569292",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Алина Тесленко",abMom:"Татьяна",abGroup:"Младшие",abStart:"2026-06-01",abEnd:"2026-06-27",abDays:[1,3,5],abAmount:"7400",abNotes:"Пн/Ср/Пт 3 раза. 1.06-27.06. Без галочки — уточнить продление.",abRenewalSms:"Добрый день, Татьяна❣️\nНапоминаю, у Алины закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-27T09:00",history:[]},
+  {id:200,name:"Кристина Ратушнюк — мама Анна",phone:"",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Кристина Ратушнюк",abMom:"Анна",abGroup:"Младшие",abStart:"2026-06-03",abEnd:"2026-08-29",abDays:[3,6],abAmount:"4600",abNotes:"Ср/Сб 2 раза. 3.06-29.08. Летний ✅. Внесли 7000р наличными. Остаток 3.07 — 6900р. Номер не указан.",abRenewalSms:"Добрый день, Анна❣️\nНапоминаю, у Кристины закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-07-03T09:00",history:[{date:"06.26",result:"💰 Остаток 6900р оплатить 3.07",newStatus:"bought",nextCall:"2026-07-03T09:00"}]},
+  {id:201,name:"Валерия Суровецкая — мама Оксана",phone:"89884164160",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Валерия Суровецкая",abMom:"Оксана",abGroup:"Младшие",abStart:"2026-05-27",abEnd:"2026-06-24",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 27.05-24.06. Без галочки — уточнить продление.",abRenewalSms:"Добрый день, Оксана❣️\nНапоминаю, у Валерии закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-24T09:00",history:[]},
+  {id:202,name:"Микаэлла Саркисян — тётя Оксана, мама Любовь",phone:"89184088102",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Микаэлла Саркисян",abMom:"Оксана",abGroup:"Младшие",abStart:"2026-05-23",abEnd:"2026-06-17",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 23.05-17.06. Тётя Оксана +7 918 408 8102, мама Любовь +7 918 404 0782. Продление ✔️",abRenewalSms:"Добрый день, Оксана❣️\nНапоминаю, у Микаэллы закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:203,name:"Александра Тараненко — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. 20.05-13.06. 3 отработки. Предлагала летний. Уточнить продление.",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Уточнить продление. Предложить летний.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+  {id:204,name:"Елизавета Вернигор — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Елизавета Вернигор",abMom:"",abGroup:"Младшие",abStart:"2026-05-30",abEnd:"2026-08-26",abDays:[3,6],abAmount:"4600",abNotes:"Ср/Сб 2 раза. 30.05-26.08. Летний ✅. Остаток 22.07. Номер не указан.",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Елизаветы закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-07-22T09:00",history:[{date:"06.26",result:"💰 Остаток оплатить 22.07",newStatus:"bought",nextCall:"2026-07-22T09:00"}]},
+  {id:205,name:"Николь Карпова — папа Алексей",phone:"",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Николь Карпова",abMom:"",abGroup:"Младшие",abStart:"2026-06-02",abEnd:"2026-06-30",abDays:[1,5],abAmount:"6000",abNotes:"Пн/Пт 2 раза. 2.06-30.06. 9 занятий. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Николь закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-29T09:00",history:[]},
+  {id:206,name:"Дарья Пермакова — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"callback",notes:"Ср/Пт 2 раза. 29.05-24.06. Первый месяц. Уточнить продление.",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Первый месяц. Уточнить продление.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+  {id:207,name:"Светлана Карпенко — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"callback",notes:"Пн/Пт 2 раза. Даты не указаны. Уточнить период и продление.",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Уточнить даты абонемента.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+  {id:208,name:"Любава Колесникова — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Любава Колесникова",abMom:"",abGroup:"Младшие",abStart:"2026-06-05",abEnd:"2026-06-30",abDays:[1,5],abAmount:"1000",abNotes:"Пн/Пт 2 раза. 5.06-30.06. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Любавы закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-29T09:00",history:[]},
+  {id:209,name:"Ника Хвостова — папа Алексей",phone:"",group:"Младшие",channel:"Обычное смс",status:"bought",abChild:"Ника Хвостова",abMom:"",abGroup:"Младшие",abStart:"2026-06-20",abEnd:"2026-07-17",abDays:[3,6],abAmount:"5200",abNotes:"Ср/Сб 2 раза. 20.06-17.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Ники закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:210,name:"Новичкова Дарьяна — мама",phone:"",group:"Младшие",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. Даты не указаны. Уточнить период и продление.",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Уточнить даты и продление.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+
+  // ── СРЕДНИЕ ──
+  {id:211,name:"Марина Материкина — мама",phone:"",group:"Средние",channel:"Обычное смс",status:"bought",abChild:"Марина Материкина",abMom:"",abGroup:"Средние",abStart:"2026-05-29",abEnd:"2026-08-26",abDays:[1,5],abAmount:"4600",abNotes:"Пн/Пт 2 раза. 29.05-26.08. Летний ✅",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Марины закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:212,name:"Саша Вакуленко — мама",phone:"",group:"Средние",channel:"Обычное смс",status:"bought",abChild:"Саша Вакуленко",abMom:"",abGroup:"Средние",abStart:"2026-06-12",abEnd:"2026-07-07",abDays:[1,5],abAmount:"5700",abNotes:"Пн/Пт 2 раза. 12.06-7.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Саши закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:213,name:"Алиса Ермолина — мама",phone:"",group:"Средние",channel:"Обычное смс",status:"callback",notes:"Пн/Пт 2 раза. 18.05-12.06. Предложить летний абонемент!",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Предложить летний абонемент.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+  {id:214,name:"Василиса Жердий — мама",phone:"",group:"Средние",channel:"Обычное смс",status:"bought",abChild:"Василиса Жердий",abMom:"",abGroup:"Средние",abStart:"2026-06-12",abEnd:"2026-07-08",abDays:[4,6],abAmount:"5700",abNotes:"Чт/Сб 2 раза. 12.06-8.07. Предложить летний. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Василисы закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:215,name:"Мария — мама Светлана",phone:"",group:"Средние",channel:"Обычное смс",status:"bought",abChild:"Мария",abMom:"Светлана",abGroup:"Средние",abStart:"2026-06-08",abEnd:"2026-07-04",abDays:[1,5],abAmount:"5200",abNotes:"Пн/Пт 2 раза. 8.06-4.07. Продление ✔️",abRenewalSms:"Добрый день, Светлана❣️\nНапоминаю, у Марии закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:216,name:"Ева Белова — мама Светлана",phone:"",group:"Средние",channel:"Обычное смс",status:"bought",abChild:"Ева Белова",abMom:"Светлана",abGroup:"Средние",abStart:"2026-06-08",abEnd:"2026-07-04",abDays:[1,5],abAmount:"5200",abNotes:"Пн/Пт 2 раза. 8.06-4.07. Отвечает мама Светлана. Продление ✔️",abRenewalSms:"Добрый день, Светлана❣️\nНапоминаю, у Евы закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:217,name:"Сима Пушенко — мама",phone:"",group:"Средние",channel:"Рабочий ватсап",status:"later",notes:"Пн/Пт 2 раза. 1.05-28.05. Работает только ватсап. Уедут на весь июнь, потом возобновят.",nextCall:"2026-07-01T09:00",history:[{date:"06.26",result:"⏳ Уехали на июнь. Написать в июле в ватсап.",newStatus:"later",nextCall:"2026-07-01T09:00"}]},
+  {id:218,name:"Лиза — мама",phone:"",group:"Средние",channel:"Обычное смс",status:"later",notes:"Пн/Пт 2 раза. Уехали. Приедут 1 августа.",nextCall:"2026-08-01T09:00",history:[{date:"06.26",result:"⏳ Уехали. Приедут 1 августа.",newStatus:"later",nextCall:"2026-08-01T09:00"}]},
+  {id:219,name:"Ева — мама (средние)",phone:"",group:"Средние",channel:"Обычное смс",status:"later",notes:"Чт/Сб 2 раза. Уехали. Приедут 1 июня — уточнить актуальность.",nextCall:"2026-07-01T09:00",history:[{date:"06.26",result:"⏳ Уехали. Уточнить когда приедут.",newStatus:"later",nextCall:"2026-07-01T09:00"}]},
+  {id:220,name:"Карина — мама (средние)",phone:"",group:"Средние",channel:"Обычное смс",status:"later",notes:"Пн/Пт 2 раза. Уехали. Приедут 30 августа.",nextCall:"2026-08-25T09:00",history:[{date:"06.26",result:"⏳ Уехали. Приедут 30 августа.",newStatus:"later",nextCall:"2026-08-25T09:00"}]},
+
+  // ── ПОДРОСТКИ ──
+  {id:221,name:"София Грос — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"София Грос",abMom:"",abGroup:"Подростки",abStart:"2026-06-17",abEnd:"2026-07-11",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 17.06-11.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Софии закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:222,name:"Ирина Индыкина — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Ирина Индыкина",abMom:"",abGroup:"Подростки",abStart:"2026-06-17",abEnd:"2026-07-11",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 17.06-11.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Ирины закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:223,name:"Полина Лямина — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Полина Лямина",abMom:"",abGroup:"Подростки",abStart:"2026-06-06",abEnd:"2026-07-01",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 6.06-1.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Полины закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-30T09:00",history:[]},
+  {id:224,name:"Мария Рыбалко — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Мария Рыбалко",abMom:"",abGroup:"Подростки",abStart:"2026-06-06",abEnd:"2026-09-02",abDays:[3,6],abAmount:"4600",abNotes:"Ср/Сб 2 раза. 6.06-2.09. Летний ✅",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Марии закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:225,name:"Дащян Ева — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Дащян Ева",abMom:"",abGroup:"Подростки",abStart:"2026-06-06",abEnd:"2026-07-01",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 6.06-1.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Евы закончился абонемент✨\nВремя его продлить💃",nextCall:"2026-06-30T09:00",history:[]},
+  {id:226,name:"Маргарита — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Маргарита",abMom:"",abGroup:"Подростки",abStart:"2026-06-10",abEnd:"2026-07-05",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 10.06-5.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Маргариты закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:227,name:"Дарья Гончарова — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. 3.06-27.06. Без галочки — уточнить продление.",nextCall:"2026-06-27T09:00",history:[{date:"06.26",result:"🔄 Уточнить продление 27.06.",newStatus:"callback",nextCall:"2026-06-27T09:00"}]},
+  {id:228,name:"Надежда Деревянко — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Надежда Деревянко",abMom:"",abGroup:"Подростки",abStart:"2026-06-24",abEnd:"2026-07-18",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 24.06-18.07. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Надежды закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:229,name:"Милана Дьякова — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. 30.04-24.06. Без галочки — уточнить продление.",nextCall:"2026-06-24T09:00",history:[{date:"06.26",result:"🔄 Уточнить продление 24.06.",newStatus:"callback",nextCall:"2026-06-24T09:00"}]},
+  {id:230,name:"Даша Насальцева — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"later",notes:"Ср/Сб 2 раза. 23.05-17.06. Уедут на июль и август.",nextCall:"2026-09-01T09:00",history:[{date:"06.26",result:"⏳ Уедут на июль-август. Перезвонить в сентябре.",newStatus:"later",nextCall:"2026-09-01T09:00"}]},
+  {id:231,name:"Ульяна Сергиенко — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"bought",abChild:"Ульяна Сергиенко",abMom:"",abGroup:"Подростки",abStart:"2026-05-23",abEnd:"2026-06-18",abDays:[3,6],abAmount:"5700",abNotes:"Ср/Сб 2 раза. 23.05-18.06. Продление ✔️",abRenewalSms:"Добрый день, ❣️\nНапоминаю, у Ульяны закончился абонемент✨\nВремя его продлить💃",nextCall:"",history:[]},
+  {id:232,name:"Ирина Куркина — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. 27.05-22.06. Без галочки — уточнить продление.",nextCall:"2026-06-22T09:00",history:[{date:"06.26",result:"🔄 Уточнить продление 22.06.",newStatus:"callback",nextCall:"2026-06-22T09:00"}]},
+  {id:233,name:"Татьяна Королева — мама",phone:"",group:"Подростки",channel:"Обычное смс",status:"callback",notes:"Ср/Сб 2 раза. 20.05-15.06. Возможно летний +8200р. Уточнить.",nextCall:"2026-06-23T09:00",history:[{date:"06.26",result:"🔄 Возможно летний. Уточнить.",newStatus:"callback",nextCall:"2026-06-23T09:00"}]},
+
+  {id:234,name:"Арина 3,5 г. — папа Артём, мама Кристина",phone:"89180092306",group:"Малыши",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:235,name:"Катя 6 л. — бабушка Людмила",phone:"89637207722",group:"Младшие",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:236,name:"Алиса 7 л. — папа Иван",phone:"89189110727",group:"Средние",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:237,name:"Мирабелла 3,9 г. — мама Альбина",phone:"89996524425",group:"Малыши",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:238,name:"Аня 4,5 г. — папа Иван",phone:"89293740600",group:"Малыши",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:239,name:"Мира 5 л. — мама Анастасия",phone:"89186058009",group:"Малыши",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:240,name:"Ева 2,8 г. Ксюша 6 л. — мама Даша",phone:"89201114833",group:"Малыши",channel:"Обычное смс",status:"new",notes:"Два ребёнка: Ева 2,8 г. и Ксюша 6 л.",nextCall:"2026-06-23T09:00",history:[]},
+  {id:241,name:"Агата 6 л. — мама Каролина",phone:"89821588091",group:"Младшие",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:242,name:"Алиса 9 л. — мама Екатерина",phone:"89649849806",group:"Средние",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]}
 ];
 
 // ============ STATE ============
@@ -1035,6 +1150,7 @@ function render() {
         ${waLink?`<a href="${waLink}" style="flex:1;background:#25d366;color:white;border-radius:8px;padding:9px 4px;font-size:12px;font-weight:700;text-align:center;text-decoration:none;display:block;">💬 WA</a>`:`<button disabled style="flex:1;background:#ddd;color:#999;border:none;border-radius:8px;padding:9px 4px;font-size:12px;">💬 WA</button>`}
         ${smsLink?`<a href="${smsLink}" style="flex:1;background:#9c27b0;color:white;border-radius:8px;padding:9px 4px;font-size:12px;font-weight:700;text-align:center;text-decoration:none;display:block;">✉️</a>`:`<button disabled style="flex:1;background:#ddd;color:#999;border:none;border-radius:8px;padding:9px 4px;font-size:12px;">✉️</button>`}
         <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Итог</button>
+        <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
         <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:9px 10px;font-size:12px;cursor:pointer;">⚙️</button>
       </div>
       <div class="history-toggle" onclick="toggleHistory('h${c.id}')">
@@ -1180,7 +1296,13 @@ function undoStatus(id) {
 
 // Клиенты у кого nextCall стоит сегодня (включая "вернутся через время")
 function hasTodayCall(c) {
-  if (!c.nextCall) return false;
+  if (!c.nextCall) {
+    // проверяем задачи
+    return (c.tasks||[]).some(t => {
+      const d = new Date(t.date);
+      return !t.done && d >= todayStart() && d < tomorrowStart();
+    });
+  }
   const d = new Date(c.nextCall);
   return d >= todayStart() && d < tomorrowStart();
 }
@@ -1294,6 +1416,10 @@ function renderReminders() {
         ${isLater?`<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--purple);font-weight:600;">⏳ Они обещали вернуться — самое время написать!</div>`:''}
         ${c.notes?`<div class="card-notes" style="margin-bottom:10px;">${c.notes}</div>`:''}
         ${isArrived && msg ? `<div class="msg-box" style="margin-bottom:10px;">${msg}</div>` : ''}
+        ${(() => {
+          const todayTasks = (c.tasks||[]).filter(t => { const d=new Date(t.date); return !t.done && d>=todayStart() && d<tomorrowStart(); });
+          return todayTasks.map(t => `<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('');
+        })()}
         ${contactButtons(c, true, msg || '')}
         ${isArrived ? `
         <div style="border-top:1px solid var(--border);padding-top:10px;">
@@ -1323,6 +1449,39 @@ function renderReminders() {
       </div>`;
     });
     html += `</div>`;
+  }
+
+  // ── БЛОК 2б: Абонемент заканчивается сегодня ──
+  const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
+  if (abonEndToday.length) {
+    html += `<div style="margin-top:20px;margin-bottom:8px;">
+      <div style="font-size:13px;font-weight:700;color:var(--orange);">🔔 Абонемент заканчивается сегодня (${abonEndToday.length})</div>
+    </div>`;
+    abonEndToday.forEach(c => {
+      const renewalSms = c.abRenewalSms || buildRenewalSms(c);
+      html += `<div class="remind-card" style="border:2px solid var(--orange);">
+        <div class="remind-card-top">
+          <div class="remind-name">${c.abChild||c.name}</div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="openAbonementModal(${c.id})" style="background:var(--pink-bg);color:var(--pink);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">💳</button>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+          </div>
+        </div>
+        ${c.abMom?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Мама: ${c.abMom}</div>`:''}
+        <div style="background:var(--orange-bg);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--orange);font-weight:600;">
+          🔔 Сегодня последний день абонемента — отправить СМС о продлении!
+        </div>
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">СМС для продления (редактируй прямо здесь):</div>
+          <textarea id="renewal-sms-${c.id}" style="width:100%;border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:80px;" onchange="saveRenewalSms(${c.id},this.value)">${renewalSms}</textarea>
+        </div>
+        ${contactButtons(c, true, renewalSms)}
+        <div style="display:flex;gap:7px;margin-top:4px;">
+          <button onclick="copyRenewalSms(${c.id})" style="flex:1;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📋 Копировать</button>
+          <button onclick="openAbonementModal(${c.id})" style="flex:2;background:var(--pink);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">💳 Продлить абонемент</button>
+        </div>
+      </div>`;
+    });
   }
 
   // ── БЛОК 3: БУДУЩИЕ ЗАДАЧИ ──
@@ -1423,10 +1582,10 @@ function toggleFutureDay(id) {
 // Группировка: Перезаписать → Дошедшие → Переговоры → Не дозвонились → Вернутся → Новые → На пробное
 const OBZVON_GROUPS = [
   { id:'reschedule', title:'🔄 Перезаписать',    hint:'Не пришли на пробное — позвонить и записать снова' },
+  { id:'new',        title:'🆕 Новые',            hint:'Первый контакт ещё не был' },
   { id:'waiting',    title:'📨 Ждём ответа',     hint:'Отправили инфо — написать если нет ответа 2 дня' },
   { id:'noanswer',   title:'📵 Не дозвонились',  hint:'Не брали трубку — попробовать снова' },
   { id:'callback',   title:'🔄 Перезвонить',     hint:'Попросили перезвонить в назначенную дату' },
-  { id:'new',        title:'🆕 Новые',            hint:'Первый контакт ещё не был' },
 ];
 
 let laterTargetId = null;
@@ -1653,6 +1812,7 @@ function renderObzvon() {
         ${contactButtons(c)}
         <div style="display:flex;gap:7px;margin-bottom:10px;">
           <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Записать итог</button>
+          <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
           <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">⚙️</button>
         </div>
         <div style="border-top:1px solid var(--border);padding-top:8px;">
@@ -2032,8 +2192,52 @@ function resetDays() {
   });
 }
 
+function updateAgePreview() {
+  const val = document.getElementById('ab-birthday').value;
+  const preview = document.getElementById('ab-age-preview');
+  if (!val) { preview.style.display='none'; return; }
+  const age = calcAge(val);
+  preview.style.display = 'block';
+  preview.textContent = '🎂 ' + age;
+}
+
+function calcAge(birthday) {
+  if (!birthday) return '';
+  const b = new Date(birthday);
+  const now = new Date();
+  let years = now.getFullYear() - b.getFullYear();
+  let months = now.getMonth() - b.getMonth();
+  if (months < 0 || (months === 0 && now.getDate() < b.getDate())) {
+    years--;
+    months += 12;
+  }
+  if (now.getDate() < b.getDate()) months--;
+  if (months < 0) months += 12;
+  if (years === 0) return months + ' мес.';
+  if (months === 0) return years + ' л.';
+  return years + ' л. ' + months + ' мес.';
+}
+
+function saveRenewalSms(id, text) {
+  const idx = clients.findIndex(x=>x.id===id); if(idx<0) return;
+  clients[idx].abRenewalSms = text;
+  save();
+  showToast('✅ СМС сохранено!');
+}
+
+function copyRenewalSms(id) {
+  const el = document.getElementById('renewal-sms-'+id);
+  const text = el ? el.value : (clients.find(x=>x.id===id)?.abRenewalSms || '');
+  navigator.clipboard.writeText(text).then(()=>showToast('📋 СМС скопировано!'));
+}
+
+function buildRenewalSms(c) {
+  const momName = c.abMom || '';
+  const childName = c.abChild ? c.abChild.split(' ')[0] : c.name.split(' ')[0];
+  return `Добрый день, ${momName}❣️\nНапоминаю, у ${childName} закончился абонемент✨\nВремя его продлить💃`;
+}
+
 function calcAbEnd() {
-  const startVal = document.getElementById('ab-start').value;
   const lessonsEl = document.getElementById('ab-lessons');
   let count = parseInt(lessonsEl.value);
   if (lessonsEl.value === 'custom') {
@@ -2091,6 +2295,12 @@ function openAbonementModal(id) {
   if (!c) return;
   document.getElementById('ab-client-name').textContent = c.name;
   document.getElementById('ab-child').value = c.abChild || '';
+  document.getElementById('ab-birthday').value = c.abBirthday || '';
+  document.getElementById('ab-mom').value = c.abMom || '';
+  updateAgePreview();
+  // Генерируем СМС если его нет
+  const sms = c.abRenewalSms || buildRenewalSms(c);
+  document.getElementById('ab-renewal-sms').value = sms;
   document.getElementById('ab-group').value = c.abGroup || c.group || '';
   document.getElementById('ab-start').value = c.abStart || new Date().toISOString().split('T')[0];
   document.getElementById('ab-end').value = c.abEnd || '';
@@ -2111,7 +2321,10 @@ function saveAbonement() {
   const notifyVal = document.getElementById('ab-end').dataset.notify || '';
   const childName = document.getElementById('ab-child').value.trim();
 
-  clients[idx].abChild = childName;
+  clients[idx].abChild = document.getElementById('ab-child').value.trim();
+  clients[idx].abBirthday = document.getElementById('ab-birthday').value;
+  clients[idx].abMom = document.getElementById('ab-mom').value.trim();
+  clients[idx].abRenewalSms = document.getElementById('ab-renewal-sms').value.trim();
   clients[idx].abGroup = document.getElementById('ab-group').value;
   clients[idx].abStart = document.getElementById('ab-start').value;
   clients[idx].abEnd = endVal;
@@ -2406,7 +2619,7 @@ function renderActive() {
         const waPhone=c.phone&&!c.phone.startsWith('@')?c.phone.replace(/\D/g,''):null;
         html += `<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-left:4px solid ${isEnding?'var(--orange)':'var(--pink)'};">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-            <div><div style="font-size:15px;font-weight:800;color:var(--ocean);">${c.abChild}</div><div style="font-size:11px;color:var(--muted);">${c.name}</div></div>
+            <div><div style="font-size:15px;font-weight:800;color:var(--ocean);">${c.abChild}</div><div style="font-size:11px;color:var(--muted);">${c.name}${c.abMom?' · мама '+c.abMom:''}</div>${c.abBirthday?`<div style="font-size:11px;color:var(--wave);margin-top:1px;">🎂 ${calcAge(c.abBirthday)}</div>`:''}</div>
             <span style="background:var(--pink-bg);color:var(--pink);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;">${c.abGroup||c.group||'—'}</span>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
@@ -2419,7 +2632,8 @@ function renderActive() {
           ${contactButtons(c, true)}
           <div style="display:flex;gap:7px;">
             <button onclick="openAbonementModal(${c.id})" style="flex:2;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Изменить</button>
-            <button onclick="openLeftModal(${c.id})" style="flex:2;background:#fff3e0;color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">👋 Убыл</button>
+            <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
+            <button onclick="openLeftModal(${c.id})" style="flex:1;background:#fff3e0;color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">👋</button>
           </div>
         </div>`;
       });
@@ -2464,7 +2678,57 @@ function markAsBought(id) {
   archiveBoughtEntry(clients[idx]);
   openAbonementModal(id);
 }
-// ============ CALLBACK MODAL JS ============
+// ============ TASK MODAL ============
+let taskTargetId = null;
+
+function openTaskModal(id) {
+  taskTargetId = id;
+  const c = clients.find(x=>x.id===id); if(!c) return;
+  document.getElementById('task-client-name').textContent = c.name;
+  document.getElementById('task-comment').value = '';
+  setTaskPreset(1); // по умолчанию завтра
+  document.getElementById('task-modal').classList.add('open');
+}
+
+function setTaskPreset(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(9,0,0,0);
+  document.getElementById('task-date').value = d.toISOString().slice(0,16);
+}
+
+function saveTask() {
+  const dateVal = document.getElementById('task-date').value;
+  const comment = document.getElementById('task-comment').value.trim();
+  if (!dateVal) { showToast('⚠️ Выбери дату!'); return; }
+  if (!comment) { showToast('⚠️ Напиши что нужно сделать!'); return; }
+
+  const idx = clients.findIndex(x=>x.id===taskTargetId); if(idx<0) return;
+  const dateRu = new Date(dateVal).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const timeRu = fmtTime(dateVal);
+
+  // Сохраняем задачу в nextCall + заметку в историю
+  clients[idx]._prevNextCall = clients[idx].nextCall || '';
+  clients[idx].nextCall = dateVal;
+  clients[idx].updatedAt = new Date().toISOString();
+  if(!clients[idx].history) clients[idx].history=[];
+  clients[idx].history.push({
+    date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
+    result: `📌 Задача на ${dateRu} в ${timeRu}: ${comment}`,
+    newStatus: clients[idx].status,
+    nextCall: dateVal,
+    taskComment: comment
+  });
+
+  // Добавляем задачу в список задач клиента
+  if (!clients[idx].tasks) clients[idx].tasks = [];
+  clients[idx].tasks.push({ date: dateVal, comment, done: false, id: Date.now() });
+
+  save(); updateExportBadge();
+  closeModal('task-modal');
+  showToast(`📌 Задача поставлена на ${dateRu}!`);
+  renderCurrentTab();
+}
 let callbackTargetId = null;
 
 function openCallbackModal(id) {
