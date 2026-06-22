@@ -203,7 +203,11 @@
     <button class="btn-add" onclick="openAddModal()">+ Клиент</button>
   </div>
   <div class="search-bar">
-    <input type="text" id="search" placeholder="🔍 Поиск по имени, телефону, группе..." oninput="render()">
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="search" placeholder="🔍 Поиск по имени, телефону, группе..." oninput="renderCurrentTab()" onkeydown="if(event.key==='Enter')renderCurrentTab()" style="flex:1;">
+      <button onclick="renderCurrentTab()" style="background:var(--wave);color:white;border:none;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer;flex-shrink:0;">🔍</button>
+      <button onclick="document.getElementById('search').value='';renderCurrentTab()" id="clear-search" style="display:none;background:#e0e0e0;color:var(--text);border:none;border-radius:10px;padding:10px 12px;font-size:14px;cursor:pointer;flex-shrink:0;">✕</button>
+    </div>
   </div>
   <div class="tabs" id="tabs"></div>
 </div>
@@ -725,7 +729,35 @@ let sentReminders = {};
 const EXPORT_KEY = 'ocean_crm_last_export';
 const SENT_KEY = 'ocean_sent_reminders';
 
-// Дата следующего звонка — всегда 9:00
+function renderCurrentTab() {
+  // Показать/скрыть кнопку очистки
+  const q = document.getElementById('search').value;
+  const clearBtn = document.getElementById('clear-search');
+  if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+  // Маршрутизация в нужный раздел
+  if (activeTab==='remind') renderReminders();
+  else if (activeTab==='obzvon') renderObzvon();
+  else if (activeTab==='trial_hub') renderTrialHub();
+  else if (activeTab==='active') renderActive();
+  else if (activeTab==='declined_hub') renderDeclinedHub();
+  else if (activeTab==='table') renderTable();
+  else render();
+}
+
+function getSearchQuery() {
+  return (document.getElementById('search')?.value || '').toLowerCase().trim();
+}
+
+function matchesSearch(c, q) {
+  if (!q) return true;
+  return (c.name||'').toLowerCase().includes(q)
+    || (c.phone||'').includes(q)
+    || (c.group||'').toLowerCase().includes(q)
+    || (c.notes||'').toLowerCase().includes(q)
+    || (c.channel||'').toLowerCase().includes(q)
+    || (c.abChild||'').toLowerCase().includes(q);
+}
 function defaultNextCall(daysFromNow) {
   const d = new Date();
   d.setDate(d.getDate() + (daysFromNow || 0));
@@ -1155,13 +1187,14 @@ function hasTodayCall(c) {
 
 function renderReminders() {
   const el = document.getElementById('content');
+  const q = getSearchQuery();
   const todayStr = new Date().toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
 
   // Блок 1 — пробные сегодня
-  const trialList = clients.filter(hasTodayTrial).sort((a,b)=>new Date(a.trial)-new Date(b.trial));
+  const trialList = clients.filter(c => hasTodayTrial(c) && matchesSearch(c,q)).sort((a,b)=>new Date(a.trial)-new Date(b.trial));
   // Блок 2 — nextCall сегодня (исключая тех кто в блоке 1)
   const trialIds = new Set(trialList.map(c=>c.id));
-  const callList = clients.filter(c => hasTodayCall(c) && !trialIds.has(c.id))
+  const callList = clients.filter(c => hasTodayCall(c) && !trialIds.has(c.id) && matchesSearch(c,q))
     .sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
 
   const totalToday = trialList.length + callList.length;
@@ -1501,15 +1534,13 @@ function saveLater() {
 
 function renderObzvon() {
   const el = document.getElementById('content');
-  const q = document.getElementById('search').value.toLowerCase();
+  const q = getSearchQuery();
 
   // Купили — отдельный блок внизу
-  const bought = clients.filter(c => c.status === 'bought' &&
-    (!q || c.name.toLowerCase().includes(q) || c.phone.includes(q)));
+  const bought = clients.filter(c => c.status === 'bought' && matchesSearch(c,q));
 
   // Later — отдельный компактный блок (ждут своего дня)
-  const laterList = clients.filter(c => c.status === 'later' &&
-    (!q || c.name.toLowerCase().includes(q) || c.phone.includes(q)));
+  const laterList = clients.filter(c => c.status === 'later' && matchesSearch(c,q));
 
   const activeCount = clients.filter(c=>c.status!=='bought'&&c.status!=='declined'&&c.status!=='later').length;
 
@@ -1595,8 +1626,7 @@ function renderObzvon() {
 
   // Рендер каждой группы
   OBZVON_GROUPS.forEach(g => {
-    const list = clients.filter(c => c.status === g.id &&
-      (!q || c.name.toLowerCase().includes(q) || c.phone.includes(q) || (c.notes||'').toLowerCase().includes(q)));
+    const list = clients.filter(c => c.status === g.id && matchesSearch(c,q));
     if (!list.length) return;
 
     const s = STATUS_MAP[g.id];
@@ -2480,8 +2510,9 @@ function saveCallback() {
 // ============ ПРОБНЫЕ ============
 function renderTrialHub() {
   const el = document.getElementById('content');
-  const onTrial = clients.filter(c => c.status === 'trial');
-  const arrived = clients.filter(c => c.status === 'arrived');
+  const q = getSearchQuery();
+  const onTrial = clients.filter(c => c.status === 'trial' && matchesSearch(c,q));
+  const arrived = clients.filter(c => c.status === 'arrived' && matchesSearch(c,q));
 
   let html = `<div style="background:linear-gradient(135deg,#00838f,#006064);border-radius:14px;padding:16px;color:white;margin-bottom:14px;">
     <div style="font-size:16px;font-weight:800;margin-bottom:12px;">🎯 Пробные занятия</div>
@@ -2580,7 +2611,8 @@ function markNotArrived(id) {
 // ============ НЕ АКТУАЛЬНЫЕ ============
 function renderDeclinedHub() {
   const el = document.getElementById('content');
-  const list = clients.filter(c => c.status === 'declined');
+  const q = getSearchQuery();
+  const list = clients.filter(c => c.status === 'declined' && matchesSearch(c,q));
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const thisMonth = list.filter(c => new Date(c.updatedAt||'') >= monthStart);
