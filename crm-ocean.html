@@ -2356,6 +2356,15 @@ function openAbonementModal(id) {
   document.getElementById('ab-group').value = c.abGroup || c.group || '';
   document.getElementById('ab-start').value = c.abStart || new Date().toISOString().split('T')[0];
   document.getElementById('ab-end').value = c.abEnd || '';
+  // Восстанавливаем дату уведомления
+  if (c.abNotifyDate) {
+    document.getElementById('ab-end').dataset.notify = c.abNotifyDate;
+  } else if (c.abEnd) {
+    // Если нет notify — ставим следующий день после окончания
+    const d = new Date(c.abEnd);
+    d.setDate(d.getDate() + 1);
+    document.getElementById('ab-end').dataset.notify = d.toISOString().split('T')[0];
+  }
   document.getElementById('ab-lessons').value = c.abLessons || '';
   document.getElementById('ab-amount').value = c.abAmount || '';
   document.getElementById('ab-notes').value = c.abNotes || '';
@@ -2370,7 +2379,13 @@ function openAbonementModal(id) {
 function saveAbonement() {
   const idx = clients.findIndex(x => x.id === abTargetId); if (idx < 0) return;
   const endVal = document.getElementById('ab-end').value;
-  const notifyVal = document.getElementById('ab-end').dataset.notify || '';
+  // Дата уведомления — из dataset или следующий день после окончания
+  let notifyVal = document.getElementById('ab-end').dataset.notify || '';
+  if (!notifyVal && endVal) {
+    const d = new Date(endVal);
+    d.setDate(d.getDate() + 1);
+    notifyVal = d.toISOString().split('T')[0];
+  }
   const childName = document.getElementById('ab-child').value.trim();
 
   clients[idx].abChild = document.getElementById('ab-child').value.trim();
@@ -2423,10 +2438,16 @@ function saveAbonement() {
 
 // Проверяем: сегодня день уведомления об окончании абонемента?
 function isAbonementEndToday(c) {
-  if (!c.abNotifyDate) return false;
-  // Показывать начиная с даты уведомления пока не принята оплата
-  const d = new Date(c.abNotifyDate);
-  return d <= tomorrowStart() && !c.abRenewalPaid;
+  if (c.status !== 'bought') return false;
+  if (c.abRenewalPaid) return false;
+  if (!c.abEnd && !c.abNotifyDate) return false;
+
+  // Проверяем abNotifyDate или следующий день после abEnd
+  const checkDate = c.abNotifyDate
+    ? new Date(c.abNotifyDate)
+    : (() => { const d = new Date(c.abEnd); d.setDate(d.getDate()+1); return d; })();
+
+  return checkDate <= tomorrowStart();
 }
 
 function isAbonementEndSoon(c) {
