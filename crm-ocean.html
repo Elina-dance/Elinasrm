@@ -342,6 +342,35 @@
   </div>
 </div>
 
+<!-- DUPLICATE MODAL -->
+<div class="modal-overlay" id="duplicate-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>⚠️ Похожий контакт найден!</span>
+      <button class="btn-close" onclick="closeModal('duplicate-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:#fff3e0;border:2px solid var(--orange);border-radius:12px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px;">📋 Уже есть в базе:</div>
+        <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;" id="dup-existing-name"></div>
+        <div style="font-size:13px;color:var(--wave);margin-bottom:3px;" id="dup-existing-phone"></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:3px;" id="dup-existing-status"></div>
+        <div style="font-size:12px;color:var(--muted);" id="dup-existing-group"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;" id="dup-existing-notes"></div>
+      </div>
+      <div style="background:var(--foam);border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--wave);margin-bottom:4px;">🆕 Новая карточка:</div>
+        <div style="font-size:15px;font-weight:800;color:var(--text);" id="dup-new-name"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button onclick="dupMerge()" style="background:var(--wave);color:white;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;">🔗 Объединить в одну карточку</button>
+        <button onclick="dupOpenExisting()" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;">✏️ Открыть существующую</button>
+        <button onclick="dupCreateAnyway()" style="background:#f5f5f5;color:var(--muted);border:1.5px solid #e0e0e0;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;">➕ Всё равно создать новую</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MONTH ADJUST MODAL -->
 <div class="modal-overlay" id="month-adjust-modal">
   <div class="modal">
@@ -576,7 +605,7 @@ const STATUSES = [
   { id:'noanswer',   label:'📵 Не дозвонились',       cls:'opt-noanswer',   cardCls:'s-noanswer',   pill:'background:#fff8e1;color:#e65100' },
   { id:'reschedule', label:'🔄 Перезаписать',         cls:'opt-reschedule', cardCls:'s-reschedule', pill:'background:#fce4ec;color:#c62828' },
   { id:'later',      label:'⏳ Вернутся через время', cls:'opt-later',      cardCls:'s-later',      pill:'background:#ede7ff;color:#7c4dff' },
-  { id:'bought',     label:'🩷 Купили',               cls:'opt-bought',     cardCls:'s-bought',     pill:'background:#fce4f3;color:#e91e8c' },
+  { id:'bought',     label:'🎓 Действующий',         cls:'opt-bought',     cardCls:'s-bought',     pill:'background:#fce4f3;color:#e91e8c' },
   { id:'declined',   label:'❌ Не актуально',         cls:'opt-declined',   cardCls:'s-declined',   pill:'background:#f5f5f5;color:#757575' },
 ];
 const STATUS_SHORT = {
@@ -588,7 +617,7 @@ const STATUS_SHORT = {
   noanswer:   '📵 Не дозвон.',
   reschedule: '🔄 Перезап.',
   later:      '⏳ Позже',
-  bought:     '🩷 Купили',
+  bought:     '🎓 Действующий',
   declined:   '❌ Отказ',
 };
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.id,s]));
@@ -598,9 +627,9 @@ const TABS_CFG = [
   { id:'obzvon',       label:'📞 Обзвон' },
   { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'active',       label:'🎓 Действующие' },
+  { id:'all',          label:'Все' },
   { id:'overdue_hub',  label:'🔴 Просроченные' },
   { id:'declined_hub', label:'🗃 Не актуальные' },
-  { id:'all',          label:'Все' },
   { id:'table',        label:'📋 Таблица' },
 ];
 
@@ -661,7 +690,7 @@ const INITIAL_DATA = [
   {id:53,name:"Нина — мама Василисы, 6 л.",phone:"8 (913) 607-47-47",group:"Младшие",channel:"Рабочий тг",trial:"2026-06-24T18:00",status:"trial",notes:"Приедут из Абхазии.",nextCall:"",history:[]},
   {id:54,name:"Яра 8 л. — мама Алла (д/с 44)",phone:"8 (938) 441-08-49",group:"Средние",channel:"Макс",trial:"2026-06-26T19:00",status:"trial",notes:"",nextCall:"",history:[]},
   {id:55,name:"Равенна 7 л. — мама Виктория",phone:"89673240688",group:"Средние",channel:"Личный тг",trial:"",status:"waiting",notes:"Сбросили звонок, переписка в тг. Ждём ответа.",nextCall:"2026-06-23T09:00",history:[{date:"21.06.26 00:00",result:"📨 Сбросили звонок, написали в тг. Ждём ответа.",newStatus:"waiting",nextCall:"2026-06-23T09:00"}]},
-  {id:56,name:"Даша 4,3 г. — мама Алена",phone:"8 (988) 184-91-66",group:"Малыши",channel:"Рабочий тг",trial:"",status:"noanswer",notes:"Не дозвонились. Перезвонить.",nextCall:"2026-06-22T09:00",history:[{date:"21.06.26 00:00",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:"2026-06-22T09:00"}]},
+  {id:56,name:"Даша 4,3 г. — мама Алена",phone:"89881849166",group:"Малыши",channel:"Рабочий тг",trial:"",status:"later",notes:"Уезжают, будут к сентябрю. Позвонить в начале сентября.",nextCall:"2026-09-01T09:00",history:[{date:"21.06.26",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:""},{date:"23.06.26",result:"⏳ Уезжают. Вернутся к сентябрю.",newStatus:"later",nextCall:"2026-09-01T09:00"}]},
   {id:57,name:"Александра 4 г. — мама Елена",phone:"89649415551",group:"Младшие",channel:"Рабочий тг",trial:"",status:"later",notes:"Сейчас не до этого. Попросили предложить в середине августа. Перезвонить 15 августа.",nextCall:"2026-08-15T09:00",history:[{date:"21.06.26 00:00",result:"⏳ Сейчас не актуально. Перезвонить 15 августа.",newStatus:"later",nextCall:"2026-08-15T09:00"}]},
   {id:58,name:"Мария 4 г. — мама Александра (д/с 86)",phone:"89180624516",group:"Младшие",channel:"Рабочий тг",trial:"",status:"callback",notes:"Попросили позвонить в понедельник в обед. 22.06.",nextCall:"2026-06-22T12:00",history:[{date:"21.06.26 00:00",result:"🔄 Перезвонить в понедельник в обед 22.06.",newStatus:"callback",nextCall:"2026-06-22T12:00"}]},
   {id:59,name:"Мэри 3 г. — мама Анжелика",phone:"89654670222",group:"Малыши",channel:"Рабочий тг",trial:"2026-06-23T18:00",status:"trial",notes:"Записались на вторник 23.06 в 18:00.",nextCall:"2026-06-23T09:00",history:[{date:"21.06.26 00:00",result:"🎯 Записались на пробное 23.06 в 18:00.",newStatus:"trial",nextCall:"2026-06-23T09:00"}]},
@@ -680,7 +709,7 @@ const INITIAL_DATA = [
   {id:70,name:"Наина 4,6 г. — папа Манас",phone:"89647866890",group:"Малыши",channel:"Обычное смс",trial:"2026-06-22T18:00",status:"arrived",notes:"Записаны в пн 22.06 в 18:00. Позвонить 8 июня уточнили — приедут.",nextCall:"2026-06-23T09:00",history:[{date:"29.05.26",result:"🎯 Записаны на пн 22.06 в 18:00.",newStatus:"trial",nextCall:""}]},
   {id:71,name:"Ольга бабушка Ани 7,5 л.",phone:"89891606621",group:"Средние",channel:"Обычное смс",trial:"2026-06-22T18:00",status:"arrived",notes:"Придут 22.06. Ждём их.",nextCall:"2026-06-23T09:00",history:[{date:"29.05.26",result:"🎯 Придут 22.06.",newStatus:"trial",nextCall:""}]},
   {id:72,name:"Алена 7 л. Полина 8 л. — бабушка Галина (д/с 4)",phone:"89184042878",group:"Средние",channel:"Рабочий ватсап",trial:"",status:"callback",notes:"Отправлено на ватсап. Пригласить в пятницу 12 июня. Перезвонить.",nextCall:"2026-06-26T09:00",history:[{date:"02.06.26",result:"📨 Отправлено в ватсап. Пригласить в пятницу.",newStatus:"waiting",nextCall:""}]},
-  {id:73,name:"Полина 4,5 г. Есения 4,5 г. — папа, мама Елена",phone:"89884130912",group:"Малыши",channel:"Обычное смс",trial:"",status:"noanswer",notes:"Не дозвонились 10.05. Повторить.",nextCall:"2026-06-22T09:00",history:[{date:"19.05.26",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:""}]},
+  {id:73,name:"Полина 4,5 г. Есения 4,5 г. — папа, мама Елена",phone:"89884130912",group:"Малыши",channel:"Макс",trial:"2026-06-24T18:00",status:"trial",notes:"Папа сказал придут завтра 24.06 в 18:00 если напомнить и написать адрес. Написать в Максе!",nextCall:"2026-06-24T09:00",tasks:[{id:1719136800000,date:"2026-06-24T09:00",comment:"Написать в Максе адрес и напомнить про занятие сегодня в 18:00!",done:false}],history:[{date:"19.05.26",result:"📵 Не дозвонились.",newStatus:"noanswer",nextCall:""},{date:"23.06.26",result:"🎯 Папа сказал придут 24.06 в 18:00. Написать адрес в Максе.",newStatus:"trial",nextCall:"2026-06-24T09:00"}]},
   {id:74,name:"Анастасия Дарья 9 л.",phone:"89882859383",group:"Средние",channel:"Личный тг",trial:"",status:"waiting",notes:"Отправила инфу с личного тг, не дозвонилась 10.05.",nextCall:"2026-06-23T09:00",history:[{date:"07.05.26",result:"📨 Инфо в тг. Не дозвонились.",newStatus:"waiting",nextCall:""}]},
   {id:75,name:"Ксюша 4 г. — мама Наталья",phone:"89189020898",group:"Малыши",channel:"Личный тг",trial:"",status:"waiting",notes:"Отправлено смс в личном тг 10.05.",nextCall:"2026-06-23T09:00",history:[{date:"19.05.26",result:"📨 Смс в тг.",newStatus:"waiting",nextCall:""}]},
   {id:76,name:"Тэя 4 г. — мама Юля",phone:"89325497141",group:"Малыши",channel:"Личный тг",trial:"",status:"waiting",notes:"Вроде готова записаться, мешкается, думает. Сказала напишет сама. Смс в личном тг.",nextCall:"2026-06-23T09:00",history:[{date:"19.05.26",result:"📨 Думает, смс в тг.",newStatus:"waiting",nextCall:""}]},
@@ -878,6 +907,18 @@ let tableFilter = 'all';
 let sentReminders = {};
 const EXPORT_KEY = 'ocean_crm_last_export';
 const SENT_KEY = 'ocean_sent_reminders';
+
+function switchTab(tabId) {
+  activeTab = tabId;
+  renderTabs();
+  renderCurrentTab();
+}
+
+function filterByStatus(status) {
+  window._statusFilter = status;
+  render();
+  window._statusFilter = null;
+}
 
 function renderCurrentTab() {
   // Показать/скрыть кнопку очистки
@@ -1105,12 +1146,12 @@ function filterClients() {
   const q = document.getElementById('search').value.toLowerCase();
   return clients.filter(c => {
     let matchTab = false;
-    if (activeTab==='all') matchTab = true;
+    if (activeTab==='all') matchTab = window._statusFilter ? c.status === window._statusFilter : true;
     else if (activeTab==='overdue') matchTab = isOverdue(c);
     else if (activeTab==='obzvon') matchTab = c.status !== 'bought' && c.status !== 'declined';
     else matchTab = c.status === activeTab;
     const matchSearch = !q || c.name.toLowerCase().includes(q) ||
-      c.phone.toLowerCase().includes(q) || (c.group||'').toLowerCase().includes(q) ||
+      (c.phone||'').toLowerCase().includes(q) || (c.group||'').toLowerCase().includes(q) ||
       (c.notes||'').toLowerCase().includes(q) || (c.channel||'').toLowerCase().includes(q);
     return matchTab && matchSearch;
   });
@@ -1128,18 +1169,68 @@ function render() {
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
   if (activeTab==='table') { renderTable(); return; }
 
-  const list = filterClients();
+  const GROUP_ORDER_ALL = ['Индивидуальные','Малыши','Младшие','Средние','Подростки'];
+  const list = filterClients().sort((a,b) => {
+    const ga = GROUP_ORDER_ALL.indexOf(a.group||'');
+    const gb = GROUP_ORDER_ALL.indexOf(b.group||'');
+    const oa = ga>=0?ga:99, ob = gb>=0?gb:99;
+    if (oa!==ob) return oa-ob;
+    return (a.name||'').localeCompare(b.name||'','ru');
+  });
   const el = document.getElementById('content');
   const total = clients.length;
   const bought = clients.filter(c=>c.status==='bought').length;
   const arrived = clients.filter(c=>c.status==='arrived').length;
+  const trial = clients.filter(c=>c.status==='trial').length;
   const overdue = clients.filter(isOverdue).length;
 
-  let html = `<div class="stats-bar">
-    <div class="stat-chip"><div class="num" style="color:var(--ocean)">${total}</div><div class="lbl">Всего</div></div>
-    <div class="stat-chip"><div class="num" style="color:var(--pink)">${bought}</div><div class="lbl">🩷 Купили</div></div>
-    <div class="stat-chip"><div class="num" style="color:var(--green)">${arrived}</div><div class="lbl">👣 Дошли</div></div>
-    <div class="stat-chip"><div class="num" style="color:var(--red)">${overdue}</div><div class="lbl">🔴 Просроч.</div></div>
+  // Продлили в этом месяце (abStart в этом месяце, были раньше)
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  const thisMonthBought = clients.filter(c =>
+    c.status==='bought' && c.abStart && (() => {
+      const d = new Date(c.abStart);
+      return d.getFullYear()===curYear && d.getMonth()+1===curMonth;
+    })()
+  );
+  const renewedThisMonth = thisMonthBought.length;
+  const newThisMonth = thisMonthBought.filter(c => {
+    const prevBought = (c.history||[]).filter(h=>h.newStatus==='bought');
+    return prevBought.length <= 1;
+  }).length;
+  const renewedCount = renewedThisMonth - newThisMonth;
+
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+    <div onclick="window._statusFilter=null;render()" style="background:var(--foam);border-radius:10px;padding:8px 10px;text-align:center;cursor:pointer;border:1.5px solid var(--border);">
+      <div style="font-size:20px;font-weight:800;color:var(--ocean);">${total}</div>
+      <div style="font-size:10px;color:var(--muted);font-weight:600;">Всего</div>
+    </div>
+    <div onclick="switchTab('overdue_hub')" style="background:var(--red-bg);border-radius:10px;padding:8px 10px;text-align:center;cursor:pointer;border:1.5px solid var(--red);">
+      <div style="font-size:20px;font-weight:800;color:var(--red);">${overdue}</div>
+      <div style="font-size:10px;color:var(--red);font-weight:600;">🔴 Просрочено</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
+    <div onclick="filterByStatus('bought')" style="background:#fce4f3;border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;border:1.5px solid var(--pink);">
+      <div style="font-size:17px;font-weight:800;color:var(--pink);">${renewedCount}</div>
+      <div style="font-size:9px;color:var(--pink);font-weight:700;">🔄 Продлили</div>
+      <div style="font-size:8px;color:var(--muted);">этот мес.</div>
+    </div>
+    <div onclick="filterByStatus('bought')" style="background:#e8f5e9;border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;border:1.5px solid var(--green);">
+      <div style="font-size:17px;font-weight:800;color:var(--green);">${newThisMonth}</div>
+      <div style="font-size:9px;color:var(--green);font-weight:700;">🆕 Новые</div>
+      <div style="font-size:8px;color:var(--muted);">этот мес.</div>
+    </div>
+    <div onclick="filterByStatus('arrived')" style="background:var(--green-bg);border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;border:1.5px solid var(--green);">
+      <div style="font-size:17px;font-weight:800;color:var(--green);">${arrived}</div>
+      <div style="font-size:9px;color:var(--green);font-weight:700;">👣 Дошли</div>
+    </div>
+    <div onclick="filterByStatus('trial')" style="background:#e0f7fa;border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;border:1.5px solid #00acc1;">
+      <div style="font-size:17px;font-weight:800;color:#00838f;">${trial}</div>
+      <div style="font-size:9px;color:#00838f;font-weight:700;">🎯 Записаны</div>
+    </div>
   </div>`;
 
   if (!list.length) {
@@ -1147,9 +1238,16 @@ function render() {
     el.innerHTML = html; return;
   }
 
+  let lastGrp = null;
   list.forEach(c => {
     const od = isOverdue(c);
     const s = STATUS_MAP[c.status] || STATUSES[0];
+    // Заголовок группы
+    const curGrp = c.group || '—';
+    if (curGrp !== lastGrp) {
+      html += `<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;padding:10px 4px 4px;${lastGrp?'border-top:1px solid var(--border);margin-top:4px;':''}">${curGrp}</div>`;
+      lastGrp = curGrp;
+    }
     let dateTag = '';
     if (od) dateTag = `<span class="meta-tag overdue">🔴 Просрочено: ${fmtDT(c.nextCall)}</span>`;
     else if (c.nextCall) dateTag = `<span class="meta-tag date-today">📅 ${fmtDT(c.nextCall)}</span>`;
@@ -2088,12 +2186,26 @@ function openEditModal(id) {
   renderStatusGrid('status-grid-edit', selectedStatus, 'selectStatus');
   document.getElementById('edit-modal').classList.add('open');
 }
-function selectStatus(s) { selectedStatus=s; renderStatusGrid('status-grid-edit', s, 'selectStatus'); }
+function selectStatus(s) {
+  if (s === 'active') {
+    // Переводим в действующие — закрываем модалку и открываем абонемент
+    const id = editingId;
+    selectedStatus = 'bought';
+    renderStatusGrid('status-grid-edit', 'bought', 'selectStatus');
+    closeModal('edit-modal');
+    setTimeout(() => openAbonementModal(id), 100);
+    showToast('💳 Заполни данные абонемента для перевода в Действующие');
+    return;
+  }
+  selectedStatus = s;
+  renderStatusGrid('status-grid-edit', s, 'selectStatus');
+}
 function saveClient() {
   const name=document.getElementById('f-name').value.trim();
   if(!name){alert('Введи имя'); return;}
+  const phone=document.getElementById('f-phone').value.trim();
   const data = {
-    name, phone:document.getElementById('f-phone').value.trim(),
+    name, phone,
     group:document.getElementById('f-group').value,
     channel:document.getElementById('f-channel').value.trim(),
     trial:document.getElementById('f-trial').value,
@@ -2101,6 +2213,21 @@ function saveClient() {
     nextCall:document.getElementById('f-next-call').value,
     status:selectedStatus, updatedAt:new Date().toISOString()
   };
+
+  // Проверка дублей по телефону (только при создании нового)
+  if (!editingId && phone) {
+    const cleanPhone = phone.replace(/\D/g,'');
+    const duplicate = clients.find(c => {
+      if (!c.phone) return false;
+      return c.phone.replace(/\D/g,'') === cleanPhone;
+    });
+    if (duplicate) {
+      // Показываем предупреждение о дубле
+      showDuplicateWarning(duplicate, data);
+      return;
+    }
+  }
+
   if(editingId) {
     const idx=clients.findIndex(x=>x.id===editingId);
     if(idx>=0) clients[idx]={...clients[idx],...data};
@@ -2108,6 +2235,56 @@ function saveClient() {
     clients.unshift({id:getNextId(),...data,history:[]});
   }
   save(); closeModal('edit-modal'); updateExportBadge(); render();
+}
+
+function showDuplicateWarning(existing, newData) {
+  // Показываем модалку с предупреждением
+  const s = STATUS_MAP[existing.status];
+  document.getElementById('dup-existing-name').textContent = existing.name;
+  document.getElementById('dup-existing-phone').textContent = existing.phone || '—';
+  document.getElementById('dup-existing-status').textContent = s ? s.label : existing.status;
+  document.getElementById('dup-existing-group').textContent = existing.group || '—';
+  document.getElementById('dup-existing-notes').textContent = existing.notes || '—';
+  document.getElementById('dup-new-name').textContent = newData.name;
+  // Сохраняем данные для кнопок
+  window._dupExistingId = existing.id;
+  window._dupNewData = newData;
+  document.getElementById('duplicate-modal').classList.add('open');
+}
+
+function dupOpenExisting() {
+  closeModal('duplicate-modal');
+  closeModal('edit-modal');
+  openEditModal(window._dupExistingId);
+}
+
+function dupMerge() {
+  // Объединяем — обновляем существующую карточку данными новой (не затираем историю)
+  const idx = clients.findIndex(x => x.id === window._dupExistingId);
+  if (idx < 0) return;
+  const d = window._dupNewData;
+  // Обновляем только непустые поля
+  if (d.name) clients[idx].name = d.name;
+  if (d.phone) clients[idx].phone = d.phone;
+  if (d.group) clients[idx].group = d.group;
+  if (d.channel) clients[idx].channel = d.channel;
+  if (d.notes) clients[idx].notes = (clients[idx].notes ? clients[idx].notes + ' | ' : '') + d.notes;
+  if (d.nextCall) clients[idx].nextCall = d.nextCall;
+  if (d.trial) clients[idx].trial = d.trial;
+  clients[idx].status = d.status;
+  clients[idx].updatedAt = new Date().toISOString();
+  save(); closeModal('duplicate-modal'); closeModal('edit-modal');
+  updateExportBadge(); render();
+  showToast('✅ Карточки объединены!');
+}
+
+function dupCreateAnyway() {
+  // Создаём несмотря на дубль
+  const d = window._dupNewData;
+  clients.unshift({id:getNextId(),...d,history:[]});
+  save(); closeModal('duplicate-modal'); closeModal('edit-modal');
+  updateExportBadge(); render();
+  showToast('✅ Новая карточка создана');
 }
 function deleteClient() {
   if(!confirm('Удалить клиента?')) return;
@@ -2419,6 +2596,8 @@ function openAbonementModal(id) {
   if (c.abDays) {
     c.abDays.forEach(d => { selectedDays.add(d); document.getElementById('day-'+d)?.classList.add('active'); });
   }
+  // Пересчитываем дату окончания если есть все данные
+  if (c.abStart && c.abLessons && c.abDays?.length) calcAbEnd();
   document.getElementById('abonement-modal').classList.add('open');
 }
 
@@ -2880,7 +3059,15 @@ function renderActive() {
 
   } else {
     const noData = allBought.filter(c=>!c.abChild);
-    const withData = allBought.filter(c=>c.abChild);
+    const GROUP_ORDER = ['Малыши','Младшие','Средние','Подростки','Индивидуальные'];
+    const withData = allBought.filter(c=>c.abChild).sort((a,b)=>{
+      const ga = GROUP_ORDER.indexOf(a.abGroup||a.group||'');
+      const gb = GROUP_ORDER.indexOf(b.abGroup||b.group||'');
+      const orderA = ga>=0 ? ga : 99;
+      const orderB = gb>=0 ? gb : 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.abChild||a.name||'').localeCompare(b.abChild||b.name||'', 'ru');
+    });
 
     if (noData.length) {
       html += `<div style="background:#fff8e1;border:1.5px dashed var(--yellow);border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;color:#c57a00;margin-bottom:10px;">⚠️ Заполни данные абонемента (${noData.length})</div>`;
@@ -2892,7 +3079,13 @@ function renderActive() {
 
     if (withData.length) {
       html += `<div style="font-size:13px;font-weight:700;color:var(--ocean);margin-bottom:10px;">Все ученики (${withData.length}):</div>`;
+      let lastGroup = null;
       withData.forEach(c=>{
+        const curGroup = c.abGroup||c.group||'—';
+        if (curGroup !== lastGroup) {
+          html += `<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;padding:8px 0 4px;border-top:${lastGroup?'1px solid var(--border)':'none'};margin-top:${lastGroup?'4px':'0'};">${curGroup}</div>`;
+          lastGroup = curGroup;
+        }
         const endStr=c.abEnd?new Date(c.abEnd).toLocaleDateString('ru-RU',{day:'2-digit',month:'short'}):'—';
         const startStr=c.abStart?new Date(c.abStart).toLocaleDateString('ru-RU',{day:'2-digit',month:'short'}):'—';
         const daysStr=c.abDays?.length?c.abDays.map(d=>DAY_NAMES[d]).join(', '):'—';
