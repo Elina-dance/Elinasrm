@@ -272,8 +272,8 @@
         <label>Комментарий / Заметки</label>
         <textarea id="f-notes" placeholder="Важные детали..."></textarea>
       </div>
-      <div class="form-group">
-        <label>Следующий звонок / задача</label>
+      <div class="form-group" id="next-call-group">
+        <label>Следующий звонок / задача <span id="next-call-optional" style="color:var(--muted);font-weight:400;">(необязательно)</span></label>
         <input id="f-next-call" type="datetime-local">
       </div>
       <button class="btn-save" onclick="saveClient()">💾 Сохранить</button>
@@ -2207,11 +2207,12 @@ function openEditModal(id) {
   document.getElementById('btn-delete').style.display='block';
   selectedStatus=c.status;
   renderStatusGrid('status-grid-edit', selectedStatus, 'selectStatus');
+  const lbl = document.getElementById('next-call-optional');
+  if (lbl) lbl.style.display = c.status === 'bought' ? 'inline' : 'none';
   document.getElementById('edit-modal').classList.add('open');
 }
 function selectStatus(s) {
   if (s === 'active') {
-    // Переводим в действующие — закрываем модалку и открываем абонемент
     const id = editingId;
     selectedStatus = 'bought';
     renderStatusGrid('status-grid-edit', 'bought', 'selectStatus');
@@ -2222,6 +2223,15 @@ function selectStatus(s) {
   }
   selectedStatus = s;
   renderStatusGrid('status-grid-edit', s, 'selectStatus');
+  // Для действующих очищаем дату звонка — она необязательна
+  if (s === 'bought') {
+    document.getElementById('f-next-call').value = '';
+    const lbl = document.getElementById('next-call-optional');
+    if (lbl) lbl.style.display = 'inline';
+  } else {
+    const lbl = document.getElementById('next-call-optional');
+    if (lbl) lbl.style.display = 'none';
+  }
 }
 function saveClient() {
   const name=document.getElementById('f-name').value.trim();
