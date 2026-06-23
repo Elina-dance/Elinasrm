@@ -356,7 +356,8 @@
       <div class="form-group">
         <label>Тип записи</label>
         <select id="adj-type">
-          <option value="bought">✅ Добавить в «Купили»</option>
+          <option value="renewed">🔄 Продление (уже занимался)</option>
+          <option value="new">🆕 Новая продажа (первый раз)</option>
           <option value="left">👋 Добавить в «Ушли»</option>
           <option value="manual">✏️ Ручная корректировка суммы</option>
         </select>
@@ -458,7 +459,7 @@
       </div>
       <div class="form-group">
         <label>День рождения ребёнка</label>
-        <input id="ab-birthday" type="date" oninput="updateAgePreview()">
+        <input id="ab-birthday" type="text" placeholder="ДД.ММ.ГГГГ (например: 15.04.2021)" oninput="updateAgePreview()" style="font-size:16px;">
         <div id="ab-age-preview" style="display:none;margin-top:6px;background:var(--foam);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--wave);font-weight:600;"></div>
       </div>
       <div class="form-group">
@@ -477,7 +478,7 @@
       </div>
       <div class="form-group">
         <label>Дата начала</label>
-        <input id="ab-start" type="date" oninput="calcAbEnd()">
+        <input id="ab-start" type="text" placeholder="ДД.ММ.ГГГГ (например: 01.07.2026)" oninput="calcAbEnd()" style="font-size:16px;">
       </div>
       <div class="form-group">
         <label>Дни занятий (выбери)</label>
@@ -509,7 +510,7 @@
       </div>
       <div class="form-group">
         <label>Дата окончания (или введи вручную)</label>
-        <input id="ab-end" type="date">
+        <input id="ab-end" type="text" placeholder="ДД.ММ.ГГГГ — заполнится автоматически или введи вручную" oninput="onAbEndManualInput()" style="font-size:16px;">
       </div>
       <div class="form-group">
         <label>Сумма оплаты (₽)</label>
@@ -1797,10 +1798,12 @@ function renderObzvon() {
       const isOd = isOverdue(c);
       const color = isOd ? '#ff8a80' : '#a5d6a7';
       const prefix = isOd ? '🔴 ' : '';
-      allLeadsRows += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.07);">'
+      const phoneDisplay = c.phone || '—';
+      allLeadsRows += '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.07);">'
         + '<div style="font-size:10px;color:rgba(255,255,255,0.3);min-width:18px;">' + rowNum++ + '</div>'
         + '<div style="flex:1;min-width:0;">'
         + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + prefix + c.name + '</div>'
+        + '<div style="font-size:12px;color:#90caf9;margin-top:2px;font-weight:600;letter-spacing:0.3px;user-select:all;" onclick="navigator.clipboard.writeText(\'' + phoneDisplay + '\').then(()=>showToast(\'📋 Скопировано!\'))">' + phoneDisplay + '</div>'
         + '</div>'
         + '<div style="font-size:11px;color:' + color + ';font-weight:600;white-space:nowrap;">' + nextStr + '</div>'
         + '<button onclick="openEditModal(' + c.id + ')" style="background:rgba(255,255,255,0.15);border:none;border-radius:6px;padding:4px 8px;font-size:11px;color:white;cursor:pointer;">⚙️</button>'
@@ -2235,13 +2238,50 @@ function resetDays() {
   });
 }
 
+function parseRuDate(str) {
+  if (!str) return null;
+  // Поддерживаем оба формата: ДД.ММ.ГГГГ и ГГГГ-ММ-ДД
+  if (str.includes('-') && str.length === 10) return new Date(str);
+  const parts = str.split('.');
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    if (d && m && y && y.length === 4) return new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+  }
+  return null;
+}
+
+function toIsoDate(str) {
+  if (!str) return '';
+  if (str.includes('-') && str.length === 10) return str;
+  const parts = str.split('.');
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    if (d && m && y && y.length === 4) return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  return '';
+}
+
+function toRuDate(isoStr) {
+  if (!isoStr) return '';
+  if (isoStr.includes('.')) return isoStr;
+  const [y, m, d] = isoStr.split('-');
+  return `${d}.${m}.${y}`;
+}
+
 function updateAgePreview() {
   const val = document.getElementById('ab-birthday').value;
   const preview = document.getElementById('ab-age-preview');
-  if (!val) { preview.style.display='none'; return; }
-  const age = calcAge(val);
+  const d = parseRuDate(val);
+  if (!d || isNaN(d)) { preview.style.display='none'; return; }
+  const age = calcAge(d.toISOString().split('T')[0]);
   preview.style.display = 'block';
   preview.textContent = '🎂 ' + age;
+}
+
+function onAbEndManualInput() {
+  // Если вводят вручную — сбрасываем автоподсчёт
+  document.getElementById('ab-end').dataset.notify = '';
+  document.getElementById('ab-end-preview').style.display = 'none';
 }
 
 function calcAge(birthday) {
@@ -2290,6 +2330,13 @@ function buildRenewalSms(c) {
 }
 
 function calcAbEnd() {
+  const startRaw = document.getElementById('ab-start').value.trim();
+  const startDate = parseRuDate(startRaw);
+  if (!startDate || isNaN(startDate)) {
+    document.getElementById('ab-end-preview').style.display = 'none';
+    return;
+  }
+
   const lessonsEl = document.getElementById('ab-lessons');
   let count = parseInt(lessonsEl.value);
   if (lessonsEl.value === 'custom') {
@@ -2299,17 +2346,16 @@ function calcAbEnd() {
     document.getElementById('ab-lessons-custom').style.display = 'none';
   }
 
-  if (!startVal || !count || selectedDays.size === 0) {
+  if (!count || selectedDays.size === 0) {
     document.getElementById('ab-end-preview').style.display = 'none';
     return;
   }
 
   // Считаем N-е занятие начиная с даты старта
   const days = Array.from(selectedDays).sort();
-  let d = new Date(startVal);
+  let d = new Date(startDate);
   let found = 0;
   let lastDate = null;
-  // Максимум 365 дней ищем
   for (let i = 0; i < 365 && found < count; i++) {
     if (days.includes(d.getDay())) {
       found++;
@@ -2335,9 +2381,9 @@ function calcAbEnd() {
     `🔔 Уведомление о продлении: <strong>${notifyStr}</strong>`;
   document.getElementById('ab-end-preview').style.display = 'block';
 
-  // Автозаполняем дату окончания
-  document.getElementById('ab-end').value = lastDate.toISOString().split('T')[0];
-  // Сохраняем дату уведомления в hidden поле
+  // Автозаполняем дату окончания в формате ДД.ММ.ГГГГ
+  document.getElementById('ab-end').value = toRuDate(lastDate.toISOString().split('T')[0]);
+  // Сохраняем дату уведомления
   document.getElementById('ab-end').dataset.notify = notifyDate.toISOString().split('T')[0];
 }
 
@@ -2347,15 +2393,15 @@ function openAbonementModal(id) {
   if (!c) return;
   document.getElementById('ab-client-name').textContent = c.name;
   document.getElementById('ab-child').value = c.abChild || '';
-  document.getElementById('ab-birthday').value = c.abBirthday || '';
+  document.getElementById('ab-birthday').value = c.abBirthday ? toRuDate(c.abBirthday) : '';
   document.getElementById('ab-mom').value = c.abMom || '';
   updateAgePreview();
   // Генерируем СМС если его нет
   const sms = c.abRenewalSms || buildRenewalSms(c);
   document.getElementById('ab-renewal-sms').value = sms;
   document.getElementById('ab-group').value = c.abGroup || c.group || '';
-  document.getElementById('ab-start').value = c.abStart || new Date().toISOString().split('T')[0];
-  document.getElementById('ab-end').value = c.abEnd || '';
+  document.getElementById('ab-start').value = c.abStart ? toRuDate(c.abStart) : toRuDate(new Date().toISOString().split('T')[0]);
+  document.getElementById('ab-end').value = c.abEnd ? toRuDate(c.abEnd) : '';
   // Восстанавливаем дату уведомления
   if (c.abNotifyDate) {
     document.getElementById('ab-end').dataset.notify = c.abNotifyDate;
@@ -2378,22 +2424,30 @@ function openAbonementModal(id) {
 
 function saveAbonement() {
   const idx = clients.findIndex(x => x.id === abTargetId); if (idx < 0) return;
-  const endVal = document.getElementById('ab-end').value;
+  const endRaw = document.getElementById('ab-end').value.trim();
+  const endVal = toIsoDate(endRaw) || endRaw;
+  const startRaw = document.getElementById('ab-start').value.trim();
+  const startVal = toIsoDate(startRaw) || startRaw;
   // Дата уведомления — из dataset или следующий день после окончания
   let notifyVal = document.getElementById('ab-end').dataset.notify || '';
   if (!notifyVal && endVal) {
-    const d = new Date(endVal);
-    d.setDate(d.getDate() + 1);
-    notifyVal = d.toISOString().split('T')[0];
+    const d = parseRuDate(endVal) || new Date(endVal);
+    if (d && !isNaN(d)) {
+      d.setDate(d.getDate() + 1);
+      notifyVal = d.toISOString().split('T')[0];
+    }
   }
+  // День рождения
+  const birthdayRaw = document.getElementById('ab-birthday').value.trim();
+  const birthdayVal = toIsoDate(birthdayRaw) || birthdayRaw;
   const childName = document.getElementById('ab-child').value.trim();
 
   clients[idx].abChild = document.getElementById('ab-child').value.trim();
-  clients[idx].abBirthday = document.getElementById('ab-birthday').value;
+  clients[idx].abBirthday = birthdayVal;
   clients[idx].abMom = document.getElementById('ab-mom').value.trim();
   clients[idx].abRenewalSms = document.getElementById('ab-renewal-sms').value.trim();
   clients[idx].abGroup = document.getElementById('ab-group').value;
-  clients[idx].abStart = document.getElementById('ab-start').value;
+  clients[idx].abStart = startVal;
   clients[idx].abEnd = endVal;
   clients[idx].abDays = Array.from(selectedDays);
   clients[idx].abLessons = document.getElementById('ab-lessons').value;
@@ -2549,10 +2603,14 @@ function archiveBoughtEntry(client) {
   const archive = getMonthArchive(monthKey);
   // Не дублируем
   if (!archive.bought.find(x => x.id === client.id)) {
+    // Определяем новый или продление — если в истории есть bought раньше, то продление
+    const prevBought = (client.history||[]).filter(h=>h.newStatus==='bought');
+    const isNew = prevBought.length <= 1; // первый раз купил
     archive.bought.push({
       id: client.id, name: client.name, abChild: client.abChild || '',
       group: client.abGroup || client.group || '', abAmount: client.abAmount || '',
-      date: now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})
+      date: now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}),
+      isNew: isNew
     });
     saveMonthArchive(monthKey, archive);
   }
@@ -2583,20 +2641,41 @@ let activeSubTab = 'students'; // 'students' | 'thismonth' | 'history'
 
 function renderMonthCard(monthKey, data, isCurrentMonth) {
   const mName = getMonthName(monthKey);
-  const bought = data.bought || [];
-  const left = data.left || [];
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const [mYear, mMonth] = monthKey.split('-').map(Number);
+
+  // Продлили — те у кого abStart в этом месяце и статус bought и были в базе раньше
+  const renewedList = isCurrentMonth
+    ? clients.filter(c => c.status==='bought' && c.abStart && (() => {
+        const d = new Date(c.abStart); return d.getFullYear()===curYear && d.getMonth()+1===curMonth;
+      })() && (data.bought||[]).some(b=>b.id===c.id && !b.isNew))
+    : (data.renewed||[]);
+
+  // Новые продажи — те у кого abStart в этом месяце впервые
+  const newList = isCurrentMonth
+    ? clients.filter(c => c.status==='bought' && c.abStart && (() => {
+        const d = new Date(c.abStart); return d.getFullYear()===curYear && d.getMonth()+1===curMonth;
+      })() && (data.bought||[]).some(b=>b.id===c.id && b.isNew))
+    : (data.newSales||[]);
+
+  // Все купили из архива для сумм
+  const boughtAll = data.bought || [];
+  const leftAll = data.left || [];
+  const manualAdj = data.manualAdjustments || [];
+
+  const renewedSum = renewedList.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const newSum = newList.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const boughtSum = boughtAll.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const leftSum = leftAll.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const manualSum = manualAdj.reduce((s,a)=>s+(parseFloat(a.amount)||0),0);
+  const totalSum = boughtSum - leftSum + manualSum;
+
   const startCount = data.startCount || 0;
   const endCount = isCurrentMonth
-    ? (startCount + bought.length - left.length)
-    : (data.endCount || startCount + bought.length - left.length);
-
-  // Суммы
-  const boughtSum = bought.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
-  const leftSum = left.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
-  const totalSum = boughtSum - leftSum;
-
-  // Ручные корректировки
-  const manualAdj = data.manualAdjustments || [];
+    ? clients.filter(c=>c.status==='bought').length
+    : (data.endCount || 0);
 
   let h = `<div style="background:white;border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
     <div style="background:linear-gradient(135deg,#880e4f,#c2185b);color:white;padding:14px 16px;">
@@ -2610,11 +2689,11 @@ function renderMonthCard(monthKey, data, isCurrentMonth) {
           <div style="font-size:9px;opacity:0.85;">Начало</div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:8px;text-align:center;">
-          <div style="font-size:16px;font-weight:800;color:#a5d6a7;">+${bought.length}</div>
-          <div style="font-size:9px;opacity:0.85;">Пришли</div>
+          <div style="font-size:16px;font-weight:800;color:#a5d6a7;">+${boughtAll.length}</div>
+          <div style="font-size:9px;opacity:0.85;">Оплат</div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:8px;text-align:center;">
-          <div style="font-size:16px;font-weight:800;color:#ffcc80;">-${left.length}</div>
+          <div style="font-size:16px;font-weight:800;color:#ffcc80;">-${leftAll.length}</div>
           <div style="font-size:9px;opacity:0.85;">Ушли</div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:8px;text-align:center;">
@@ -2624,11 +2703,15 @@ function renderMonthCard(monthKey, data, isCurrentMonth) {
       </div>
       <div style="background:rgba(255,255,255,0.15);border-radius:10px;padding:10px 14px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-          <span style="font-size:12px;opacity:0.85;">💚 Пришли</span>
-          <span style="font-size:13px;font-weight:700;color:#a5d6a7;">${boughtSum.toLocaleString('ru-RU')} ₽</span>
+          <span style="font-size:12px;opacity:0.85;">🔄 Продлили</span>
+          <span style="font-size:13px;font-weight:700;color:#a5d6a7;">${renewedSum>0?renewedSum.toLocaleString('ru-RU')+' ₽':'—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+          <span style="font-size:12px;opacity:0.85;">🆕 Новые продажи</span>
+          <span style="font-size:13px;font-weight:700;color:#80deea;">${newSum>0?newSum.toLocaleString('ru-RU')+' ₽':'—'}</span>
         </div>
         <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-size:12px;opacity:0.85;">🧡 Ушли (возвраты)</span>
+          <span style="font-size:12px;opacity:0.85;">👋 Ушли</span>
           <span style="font-size:13px;font-weight:700;color:#ffcc80;">${leftSum>0?'−'+leftSum.toLocaleString('ru-RU')+' ₽':'—'}</span>
         </div>
         <div style="border-top:1px solid rgba(255,255,255,0.3);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
@@ -2637,47 +2720,107 @@ function renderMonthCard(monthKey, data, isCurrentMonth) {
         </div>
       </div>
     </div>
-    <div style="padding:14px 16px;">`;
 
-  if (bought.length) {
-    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px;">✅ Купили (${bought.length}) — ${boughtSum.toLocaleString('ru-RU')} ₽:</div>`;
-    bought.forEach((c,i)=>{
-      h += `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6;">
-        <div style="background:var(--green);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div><div style="font-size:11px;color:var(--muted);">${c.group||''} ${c.date?'· '+c.date:''}</div></div>
-        ${c.abAmount?`<span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
-      </div>`;
-    });
-    h += `</div>`;
-  }
+    <div style="padding:12px 16px;">`;
 
-  if (left.length) {
-    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:6px;">👋 Ушли (${left.length}):</div>`;
-    left.forEach((c,i)=>{
-      h += `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6;">
-        <div style="background:var(--orange);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div><div style="font-size:11px;color:var(--muted);">${c.group||''} ${c.date?'· '+c.date:''}</div><div style="font-size:11px;color:var(--orange);margin-top:2px;">Причина: ${c.reason||'—'}</div></div>
-        ${c.abAmount?`<span style="font-size:12px;font-weight:700;color:var(--orange);white-space:nowrap;">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
-      </div>`;
-    });
-    h += `</div>`;
-  }
+  // ── Продлили ──
+  h += monthSection('renewed-'+monthKey, '🔄 Продлили', renewedSum, boughtAll.filter(b=>!b.isNew), '#1b5e20', isCurrentMonth, true, monthKey);
+
+  // ── Новые ──
+  h += monthSection('new-'+monthKey, '🆕 Новые продажи', newSum, boughtAll.filter(b=>b.isNew), '#006064', isCurrentMonth, false, monthKey);
+
+  // ── Ушли ──
+  h += monthSectionLeft('left-'+monthKey, leftAll, isCurrentMonth, monthKey);
 
   if (manualAdj.length) {
-    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--purple);margin-bottom:6px;">✏️ Ручные корректировки:</div>`;
-    manualAdj.forEach((a,i)=>{
-      h += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;">
-        <div style="background:var(--purple);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
-        <div style="flex:1;font-size:12px;color:var(--text);">${a.comment}</div>
-        <span style="font-size:12px;font-weight:700;color:var(--purple);white-space:nowrap;">${a.amount>0?'+':''}${parseFloat(a.amount||0).toLocaleString('ru-RU')} ₽</span>
-      </div>`;
+    h += `<div style="margin-bottom:8px;"><div style="font-size:12px;font-weight:700;color:var(--purple);margin-bottom:6px;">✏️ Корректировки:</div>`;
+    manualAdj.forEach(a=>{
+      h += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px;"><span>${a.comment}</span><span style="font-weight:700;color:var(--purple);">${a.amount>0?'+':''}${parseFloat(a.amount||0).toLocaleString('ru-RU')} ₽</span></div>`;
     });
     h += `</div>`;
   }
 
-  if (!bought.length && !left.length && !manualAdj.length) h += `<div style="text-align:center;color:var(--muted);font-size:13px;padding:10px 0;">Данных нет</div>`;
+  if (!boughtAll.length && !leftAll.length) h += `<div style="text-align:center;color:var(--muted);font-size:13px;padding:10px 0;">Данных нет</div>`;
   h += `</div></div>`;
   return h;
+}
+
+function monthSection(uid, title, sum, list, color, isCurrentMonth, isRenewed, monthKey) {
+  if (!list.length) return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6;margin-bottom:8px;">
+    <span style="font-size:13px;font-weight:700;color:${color};">${title}</span>
+    <span style="font-size:12px;color:var(--muted);">—</span>
+  </div>`;
+
+  return `<div style="margin-bottom:10px;">
+    <div onclick="toggleMonthSection('${uid}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6;cursor:pointer;">
+      <span style="font-size:13px;font-weight:700;color:${color};">${title} (${list.length})</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${sum>0?`<span style="font-size:13px;font-weight:800;color:${color};">${sum.toLocaleString('ru-RU')} ₽</span>`:''}
+        <span style="font-size:11px;color:var(--muted);" id="${uid}-arrow">▼</span>
+      </div>
+    </div>
+    <div id="${uid}" style="display:none;">
+      ${list.map(c => {
+        const client = typeof c.id === 'number' ? clients.find(x=>x.id===c.id) : null;
+        return `<div style="background:#f9fafb;border-radius:10px;padding:10px 12px;margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div>
+            ${c.abAmount?`<span style="font-size:13px;font-weight:800;color:${color};">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${c.group||''} ${c.date?'· '+c.date:''}</div>
+          ${client ? `<div style="display:flex;gap:6px;">
+            <button onclick="openAbonementModal(${client.id})" style="flex:1;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Карточка</button>
+            <button onclick="openTaskModal(${client.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">📌 Задача</button>
+          </div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function monthSectionLeft(uid, list, isCurrentMonth, monthKey) {
+  if (!list.length) return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6;margin-bottom:8px;">
+    <span style="font-size:13px;font-weight:700;color:var(--orange);">👋 Ушли</span>
+    <span style="font-size:12px;color:var(--muted);">—</span>
+  </div>`;
+
+  const leftSum = list.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+
+  return `<div style="margin-bottom:10px;">
+    <div onclick="toggleMonthSection('${uid}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6;cursor:pointer;">
+      <span style="font-size:13px;font-weight:700;color:var(--orange);">👋 Ушли (${list.length})</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${leftSum>0?`<span style="font-size:13px;font-weight:800;color:var(--orange);">−${leftSum.toLocaleString('ru-RU')} ₽</span>`:''}
+        <span style="font-size:11px;color:var(--muted);" id="${uid}-arrow">▼</span>
+      </div>
+    </div>
+    <div id="${uid}" style="display:none;">
+      ${list.map(c => {
+        const client = typeof c.id === 'number' ? clients.find(x=>x.id===c.id) : null;
+        return `<div style="background:#fff8f0;border:1px solid #ffe0b2;border-radius:10px;padding:10px 12px;margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">${c.group||''} ${c.date?'· '+c.date:''}</div>
+          ${c.reason?`<div style="font-size:12px;color:var(--orange);margin-bottom:8px;font-weight:600;">Причина: ${c.reason}</div>`:''}
+          ${client ? `<div style="display:flex;gap:6px;">
+            <button onclick="openEditModal(${client.id})" style="flex:1;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">⚙️ Карточка</button>
+            <button onclick="openTaskModal(${client.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">📌 Задача</button>
+            <button onclick="openLogModal(${client.id})" style="flex:1;background:var(--wave);color:white;border:none;border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Причина</button>
+          </div>` : `<div style="font-size:11px;color:var(--muted);">Контакт не найден в базе</div>`}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function toggleMonthSection(uid) {
+  const el = document.getElementById(uid);
+  const arrow = document.getElementById(uid+'-arrow');
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▼' : '▲';
 }
 
 // ============ ДЕЙСТВУЮЩИЕ ============
@@ -2838,18 +2981,39 @@ function saveMonthAdjust() {
   const now = new Date();
   const date = now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
 
-  if (type === 'bought') {
-    archive.bought.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, manual: true });
+  if (type === 'renewed') {
+    // Ищем существующую запись и меняем isNew на false
+    const existing = archive.bought.find(b => (b.abChild||b.name||'').toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes((b.abChild||b.name||'').toLowerCase()));
+    if (existing) {
+      existing.isNew = false;
+      if (amount) existing.abAmount = amount;
+      showToast('✅ Перемещено в «Продлили»!');
+    } else {
+      // Добавляем новую запись как продление
+      archive.bought.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, isNew: false, manual: true });
+      showToast('✅ Добавлено в «Продлили»!');
+    }
+  } else if (type === 'new') {
+    const existing = archive.bought.find(b => (b.abChild||b.name||'').toLowerCase().includes(name.toLowerCase()));
+    if (existing) {
+      existing.isNew = true;
+      if (amount) existing.abAmount = amount;
+      showToast('✅ Перемещено в «Новые продажи»!');
+    } else {
+      archive.bought.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, isNew: true, manual: true });
+      showToast('✅ Добавлено в «Новые продажи»!');
+    }
   } else if (type === 'left') {
     archive.left.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, reason: 'Ручная запись', manual: true });
+    showToast('✅ Добавлено в «Ушли»!');
   } else {
     if (!archive.manualAdjustments) archive.manualAdjustments = [];
     archive.manualAdjustments.push({ comment: name, amount: parseFloat(amount)||0, date });
+    showToast('✅ Корректировка добавлена!');
   }
 
   saveMonthArchive(adjMonthKey, archive);
   closeModal('month-adjust-modal');
-  showToast('✅ Запись добавлена!');
   renderActive();
 }
 let taskTargetId = null;
