@@ -195,10 +195,10 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="save-indicator" style="color:#a5d6a7;font-size:10px;">синхронизировано</span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span></p>
     </div>
     <button class="btn-export" onclick="openExportModal()" id="export-btn">📤 Экспорт</button>
-    <button class="btn-add" onclick="loadFromTelegram()" style="background:#2196f3;" title="Загрузить данные из Telegram">📲 Из TG</button>
+    <button class="btn-add" onclick="tgLoad()" style="background:#2196f3;" title="Загрузить данные из Telegram">📲 Из TG</button>
     <button class="btn-add" onclick="importNewClients()" style="background:#7c4dff;">⬇️ Новые</button>
     <button class="btn-add" onclick="openAddModal()">+ Клиент</button>
   </div>
@@ -976,72 +976,8 @@ function defaultNextCall(daysFromNow) {
   return d.toISOString().slice(0, 16);
 }
 
-// ============ TELEGRAM BOT STORAGE ============
-const TG_TOKEN = '8954417019:AAHR0BOOQ6I6O9dVYl1_gchpQAUsSWTaiBs';
-const TG_CHAT_ID = '849129286';
-const TG_API = 'https://api.telegram.org/bot' + TG_TOKEN;
-
-async function tgSave(data) {
-  try {
-    const text = '💾OCEANCRM:' + JSON.stringify(data);
-    // Удаляем старое сообщение если есть
-    const msgId = localStorage.getItem('ocean_tg_msg_id');
-    if (msgId) {
-      await fetch(TG_API + '/deleteMessage', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({chat_id: TG_CHAT_ID, message_id: parseInt(msgId)})
-      });
-    }
-    // Отправляем новое
-    const res = await fetch(TG_API + '/sendMessage', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({chat_id: TG_CHAT_ID, text: text})
-    });
-    const json = await res.json();
-    if (json.ok) {
-      localStorage.setItem('ocean_tg_msg_id', json.result.message_id);
-    }
-  } catch(e) { console.log('TG save error:', e); }
-}
-
-async function tgLoad() {
-  try {
-    const res = await fetch(TG_API + '/getUpdates?limit=100&offset=-100');
-    const json = await res.json();
-    if (!json.ok) return null;
-    // Ищем последнее сообщение с нашими данными
-    const msgs = json.result
-      .map(u => u.message || u.channel_post)
-      .filter(m => m && m.text && m.text.startsWith('💾OCEANCRM:'))
-      .sort((a,b) => b.date - a.date);
-    if (!msgs.length) return null;
-    const dataStr = msgs[0].text.replace('💾OCEANCRM:', '');
-    localStorage.setItem('ocean_tg_msg_id', msgs[0].message_id);
-    return JSON.parse(dataStr);
-  } catch(e) { console.log('TG load error:', e); return null; }
-}
 
 // ============ STORAGE ============
-async function loadFromTelegram() {
-  showToast('🔄 Загружаю данные из Telegram...');
-  const tgData = await tgLoad();
-  if (tgData && tgData.length > 0) {
-    clients = tgData;
-    // Авто-слияние новых
-    const existingIds = new Set(clients.map(c => c.id));
-    const newOnes = INITIAL_DATA.filter(c => !existingIds.has(c.id));
-    if (newOnes.length > 0) clients.push(...newOnes);
-    localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-    showToast('✅ Данные загружены из Telegram! (' + clients.length + ' контактов)');
-    render();
-    updateExportBadge();
-  } else {
-    showToast('📭 В Telegram данных нет — используем локальные');
-  }
-}
-
 function load() {
   try {
     const saved = localStorage.getItem('ocean_crm_v3');
@@ -1067,12 +1003,15 @@ let saveTimer = null;
 function save() {
   try {
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+    localStorage.setItem('ocean_last_save', Date.now().toString());
     const banner = document.getElementById('save-banner');
     if (banner) {
       banner.style.display = 'block';
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => banner.style.display = 'none', 2000);
     }
+    // Запускаем синхронизацию с TG
+    scheduleTgSave();
   } catch(e) {
     showToast('⚠️ Не удалось сохранить!');
   }
@@ -3657,7 +3596,95 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ IMPORT NEW CLIENTS ============
+// ============ TELEGRAM SYNC ============
+const TG_TOKEN = '8954417019:AAHR0BOOQ6I6O9dVYl1_gchpQAUsSWTaiBs';
+const TG_CHAT_ID = '849129286';
+const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
+let tgSyncTimer = null;
+let lastSyncTime = 0;
+
+// Сохранение в Telegram как файл
+async function tgSave() {
+  try {
+    const data = {
+      clients,
+      archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
+      savedAt: new Date().toISOString()
+    };
+    const json = JSON.stringify(data);
+    const blob = new Blob([json], { type: 'application/json' });
+    const formData = new FormData();
+    formData.append('chat_id', TG_CHAT_ID);
+    formData.append('document', blob, 'crm-data.json');
+    formData.append('caption', '💾 CRM sync ' + new Date().toLocaleString('ru-RU'));
+    await fetch(`${TG_API}/sendDocument`, { method: 'POST', body: formData });
+    lastSyncTime = Date.now();
+    updateSyncStatus('✅ Синхронизировано ' + new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}));
+  } catch(e) {
+    console.log('TG save error:', e);
+    updateSyncStatus('⚠️ Ошибка синхронизации');
+  }
+}
+
+// Загрузка из Telegram
+async function tgLoad() {
+  try {
+    updateSyncStatus('🔄 Загрузка...');
+    const res = await fetch(`${TG_API}/getUpdates?limit=50&offset=-50`);
+    const json = await res.json();
+    if (!json.ok) { updateSyncStatus('⚠️ Ошибка TG'); return false; }
+
+    // Ищем последний документ с нашими данными
+    const docs = json.result
+      .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
+      .sort((a,b) => b.message.date - a.message.date);
+
+    if (!docs.length) { updateSyncStatus('📭 Нет данных в TG'); return false; }
+
+    const fileId = docs[0].message.document.file_id;
+    const fileRes = await fetch(`${TG_API}/getFile?file_id=${fileId}`);
+    const fileJson = await fileRes.json();
+    if (!fileJson.ok) { updateSyncStatus('⚠️ Ошибка файла'); return false; }
+
+    const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
+    const dataRes = await fetch(fileUrl);
+    const data = await dataRes.json();
+
+    if (data.clients && data.clients.length > 0) {
+      // Сравниваем время — берём свежее
+      const remoteTime = new Date(data.savedAt).getTime();
+      const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+
+      if (remoteTime > localTime) {
+        clients = data.clients;
+        if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
+        save();
+        renderTabs();
+        renderCurrentTab();
+        updateSyncStatus('✅ Загружено из TG ' + new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}));
+        showToast('✅ Данные загружены с другого устройства!');
+        return true;
+      } else {
+        updateSyncStatus('✅ Актуально');
+        return false;
+      }
+    }
+  } catch(e) {
+    console.log('TG load error:', e);
+    updateSyncStatus('⚠️ Ошибка загрузки');
+    return false;
+  }
+}
+
+function updateSyncStatus(text) {
+  const el = document.getElementById('sync-status');
+  if (el) el.textContent = text;
+}
+
+function scheduleTgSave() {
+  if (tgSyncTimer) clearTimeout(tgSyncTimer);
+  tgSyncTimer = setTimeout(() => tgSave(), 5000); // сохраняем через 5 сек после последнего изменения
+}
 function importNewClients() {
   const existingIds = new Set(clients.map(c => c.id));
   const toAdd = INITIAL_DATA.filter(c => !existingIds.has(c.id));
@@ -3683,6 +3710,8 @@ window.onerror = function(msg, src, line, col, err) {
 load();
 updateExportBadge();
 render();
+// Автосинхронизация с TG при открытии
+setTimeout(() => tgLoad(), 2000);
 </script>
 </body>
 </html>
