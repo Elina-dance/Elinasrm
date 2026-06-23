@@ -342,6 +342,39 @@
   </div>
 </div>
 
+<!-- MONTH ADJUST MODAL -->
+<div class="modal-overlay" id="month-adjust-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>✏️ Поправить данные месяца</span>
+      <button class="btn-close" onclick="closeModal('month-adjust-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:var(--foam);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--wave);">
+        <strong id="month-adjust-title"></strong>
+      </div>
+      <div class="form-group">
+        <label>Тип записи</label>
+        <select id="adj-type">
+          <option value="bought">✅ Добавить в «Купили»</option>
+          <option value="left">👋 Добавить в «Ушли»</option>
+          <option value="manual">✏️ Ручная корректировка суммы</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Имя ученика / комментарий *</label>
+        <input id="adj-name" placeholder="Например: Соня Иванова или корректировка оплаты">
+      </div>
+      <div class="form-group">
+        <label>Сумма (₽)</label>
+        <input id="adj-amount" type="number" placeholder="5700">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Для корректировки: минус если вычесть, плюс если добавить</div>
+      </div>
+      <button class="btn-save" onclick="saveMonthAdjust()" style="background:var(--ocean);">✅ Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- TASK MODAL -->
 <div class="modal-overlay" id="task-modal">
   <div class="modal">
@@ -560,13 +593,14 @@ const STATUS_SHORT = {
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.id,s]));
 
 const TABS_CFG = [
-  { id:'remind',     label:'🔔 Напоминания' },
-  { id:'obzvon',     label:'📞 Обзвон' },
-  { id:'trial_hub',  label:'🎯 Пробные' },
-  { id:'active',     label:'🎓 Действующие' },
+  { id:'remind',       label:'🔔 Напоминания' },
+  { id:'obzvon',       label:'📞 Обзвон' },
+  { id:'trial_hub',    label:'🎯 Пробные' },
+  { id:'active',       label:'🎓 Действующие' },
+  { id:'overdue_hub',  label:'🔴 Просроченные' },
   { id:'declined_hub', label:'🗃 Не актуальные' },
-  { id:'all',        label:'Все' },
-  { id:'table',      label:'📋 Таблица' },
+  { id:'all',          label:'Все' },
+  { id:'table',        label:'📋 Таблица' },
 ];
 
 // ============ INITIAL DATA ============
@@ -855,6 +889,7 @@ function renderCurrentTab() {
   else if (activeTab==='obzvon') renderObzvon();
   else if (activeTab==='trial_hub') renderTrialHub();
   else if (activeTab==='active') renderActive();
+  else if (activeTab==='overdue_hub') renderOverdueHub();
   else if (activeTab==='declined_hub') renderDeclinedHub();
   else if (activeTab==='table') renderTable();
   else render();
@@ -1036,6 +1071,8 @@ function renderTabs() {
       if (trialCount > 0) badge = `<span class="badge badge-default">${trialCount}</span>`;
     } else if (t.id === 'active') {
       badge = `<span class="badge" style="background:var(--pink);color:white">${activeCount}</span>`;
+    } else if (t.id === 'overdue_hub') {
+      if (overdueCount > 0) badge = `<span class="badge" style="background:var(--red);color:white">${overdueCount}</span>`;
     } else if (t.id === 'declined_hub') {
       if (declinedCount > 0) badge = `<span class="badge badge-default">${declinedCount}</span>`;
     } else if (t.id === 'all') {
@@ -1086,6 +1123,7 @@ function render() {
   if (activeTab==='obzvon') { renderObzvon(); return; }
   if (activeTab==='trial_hub') { renderTrialHub(); return; }
   if (activeTab==='active') { renderActive(); return; }
+  if (activeTab==='overdue_hub') { renderOverdueHub(); return; }
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
   if (activeTab==='table') { renderTable(); return; }
 
@@ -1385,20 +1423,57 @@ function renderReminders() {
     html += `</div>`;
   }
 
-  // ── БЛОК 2: Дошедшие — позвонить сегодня ──
-  if (callList.length > 0) {
-    html += `<div style="margin-top:20px;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:700;color:var(--ocean);margin-bottom:10px;">
-        📞 Задачи на сегодня — позвонить
+  // ── БЛОК 2: Продления абонементов — ВТОРОЙ ──
+  const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
+  if (abonEndToday.length) {
+    html += `<div style="margin-top:20px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:2px;background:linear-gradient(to right,var(--orange),transparent);"></div>
+      <div style="background:var(--orange);color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">🔔 Продление абонемента (${abonEndToday.length})</div>
+      <div style="flex:1;height:2px;background:linear-gradient(to left,var(--orange),transparent);"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;">Остаётся здесь пока не внесёшь оплату и новые даты</div>`;
+    abonEndToday.forEach(c => {
+      const renewalSms = c.abRenewalSms || buildRenewalSms(c);
+      const endStr = c.abEnd ? new Date(c.abEnd).toLocaleDateString('ru-RU',{day:'2-digit',month:'long'}) : '—';
+      html += `<div class="remind-card" style="border:2px solid var(--orange);background:#fff8f0;">
+        <div class="remind-card-top">
+          <div class="remind-name">${c.abChild||c.name}</div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="openTaskModal(${c.id})" style="background:#e8eaf6;color:#3949ab;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-weight:700;">📌</button>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${c.name}${c.abMom?' · мама '+c.abMom:''} · ${c.abGroup||c.group||''}</div>
+        <div style="background:var(--orange-bg);border-radius:8px;padding:7px 10px;margin-bottom:8px;font-size:12px;color:var(--orange);font-weight:600;">
+          📅 Абонемент закончился: ${endStr}
+        </div>
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">СМС для продления:</div>
+          <textarea id="renewal-sms-${c.id}" style="width:100%;border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:75px;box-sizing:border-box;" onchange="saveRenewalSms(${c.id},this.value)">${renewalSms}</textarea>
+        </div>
+        ${contactButtons(c, true, renewalSms)}
+        <div style="display:flex;gap:7px;margin-top:4px;">
+          <button onclick="copyRenewalSms(${c.id})" style="flex:1;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">📋 Копировать</button>
+          <button onclick="confirmRenewalPayment(${c.id})" style="flex:2;background:var(--green);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✅ Оплата принята</button>
+          <button onclick="openLeftModal(${c.id})" style="flex:1;background:#fff3e0;color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">👋 Убыл</button>
+        </div>
       </div>`;
+    });
+  }
+
+  // ── БЛОК 3: Задачи на сегодня — ТРЕТИЙ ──
+  if (callList.length > 0) {
+    html += `<div style="margin-top:20px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:2px;background:linear-gradient(to right,var(--wave),transparent);"></div>
+      <div style="background:var(--wave);color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">📞 Задачи на сегодня (${callList.length})</div>
+      <div style="flex:1;height:2px;background:linear-gradient(to left,var(--wave),transparent);"></div>
+    </div>`;
 
     callList.forEach(c => {
       const s = STATUS_MAP[c.status] || STATUSES[0];
       const isArrived = c.status === 'arrived';
       const isLater = c.status === 'later';
       const msg = isArrived ? buildFollowupMsg(c) : null;
-      const waPhone = c.phone && !c.phone.startsWith('@') ? c.phone.replace(/\D/g,'') : null;
-      const waLink = (waPhone && msg) ? `https://wa.me/7${waPhone.replace(/^[78]/,'')}?text=${encodeURIComponent(msg)}` : null;
 
       html += `<div class="remind-card" ${isLater?'style="border:2px solid var(--purple);background:var(--purple-bg);"':''}>
         <div class="remind-card-top">
@@ -1443,45 +1518,13 @@ function renderReminders() {
         <div style="border-top:1px solid var(--border);padding-top:10px;">
           <div style="display:flex;gap:8px;">
             <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Записать итог</button>
-            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перенести</button>
+            <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
           </div>
         </div>`}
       </div>`;
     });
     html += `</div>`;
-  }
-
-  // ── БЛОК 2б: Абонемент заканчивается сегодня ──
-  const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
-  if (abonEndToday.length) {
-    html += `<div style="margin-top:20px;margin-bottom:8px;">
-      <div style="font-size:13px;font-weight:700;color:var(--orange);">🔔 Абонемент заканчивается сегодня (${abonEndToday.length})</div>
-    </div>`;
-    abonEndToday.forEach(c => {
-      const renewalSms = c.abRenewalSms || buildRenewalSms(c);
-      html += `<div class="remind-card" style="border:2px solid var(--orange);">
-        <div class="remind-card-top">
-          <div class="remind-name">${c.abChild||c.name}</div>
-          <div style="display:flex;gap:6px;">
-            <button onclick="openAbonementModal(${c.id})" style="background:var(--pink-bg);color:var(--pink);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">💳</button>
-            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
-          </div>
-        </div>
-        ${c.abMom?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Мама: ${c.abMom}</div>`:''}
-        <div style="background:var(--orange-bg);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--orange);font-weight:600;">
-          🔔 Сегодня последний день абонемента — отправить СМС о продлении!
-        </div>
-        <div style="margin-bottom:8px;">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">СМС для продления (редактируй прямо здесь):</div>
-          <textarea id="renewal-sms-${c.id}" style="width:100%;border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:80px;" onchange="saveRenewalSms(${c.id},this.value)">${renewalSms}</textarea>
-        </div>
-        ${contactButtons(c, true, renewalSms)}
-        <div style="display:flex;gap:7px;margin-top:4px;">
-          <button onclick="copyRenewalSms(${c.id})" style="flex:1;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📋 Копировать</button>
-          <button onclick="openAbonementModal(${c.id})" style="flex:2;background:var(--pink);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">💳 Продлить абонемент</button>
-        </div>
-      </div>`;
-    });
   }
 
   // ── БЛОК 3: БУДУЩИЕ ЗАДАЧИ ──
@@ -2218,6 +2261,15 @@ function calcAge(birthday) {
   return years + ' л. ' + months + ' мес.';
 }
 
+function confirmRenewalPayment(id) {
+  const idx = clients.findIndex(x=>x.id===id); if(idx<0) return;
+  // Открываем модалку абонемента для внесения новых данных
+  // После сохранения abRenewalPaid = true автоматически
+  clients[idx].abRenewalPaid = false; // сбрасываем чтобы после saveAbonement стало true
+  openAbonementModal(id);
+  showToast('💳 Внеси новые даты и сумму — нажми Сохранить');
+}
+
 function saveRenewalSms(id, text) {
   const idx = clients.findIndex(x=>x.id===id); if(idx<0) return;
   clients[idx].abRenewalSms = text;
@@ -2333,7 +2385,27 @@ function saveAbonement() {
   clients[idx].abAmount = document.getElementById('ab-amount').value;
   clients[idx].abNotes = document.getElementById('ab-notes').value.trim();
   clients[idx].abNotifyDate = notifyVal;
+  clients[idx].abRenewalPaid = true; // оплата внесена — убираем из напоминаний
   clients[idx].updatedAt = new Date().toISOString();
+
+  // Фиксируем оплату в архиве месяца
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const archive = getMonthArchive(monthKey);
+  // Не дублируем если уже записан в этом месяце
+  const alreadyArchived = archive.bought.some(b => b.id === clients[idx].id && b.abStart === clients[idx].abStart);
+  if (!alreadyArchived) {
+    archive.bought.push({
+      id: clients[idx].id,
+      name: clients[idx].name,
+      abChild: clients[idx].abChild || '',
+      group: clients[idx].abGroup || clients[idx].group || '',
+      abAmount: clients[idx].abAmount || '',
+      abStart: clients[idx].abStart || '',
+      date: now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})
+    });
+    saveMonthArchive(monthKey, archive);
+  }
 
   save(); updateExportBadge();
   closeModal('abonement-modal');
@@ -2352,8 +2424,18 @@ function saveAbonement() {
 // Проверяем: сегодня день уведомления об окончании абонемента?
 function isAbonementEndToday(c) {
   if (!c.abNotifyDate) return false;
+  // Показывать начиная с даты уведомления пока не принята оплата
   const d = new Date(c.abNotifyDate);
-  return d >= todayStart() && d < tomorrowStart();
+  return d <= tomorrowStart() && !c.abRenewalPaid;
+}
+
+function isAbonementEndSoon(c) {
+  // Для будущих задач — абонемент заканчивается в ближайшие 3 дня
+  if (!c.abEnd) return false;
+  const d = new Date(c.abEnd);
+  const threeDays = new Date();
+  threeDays.setDate(threeDays.getDate() + 3);
+  return d >= todayStart() && d <= threeDays && !c.abRenewalPaid;
 }
 
 // ============ УХОД УЧЕНИКА ============
@@ -2479,7 +2561,6 @@ function getMonthName(monthKey) {
 let activeSubTab = 'students'; // 'students' | 'thismonth' | 'history'
 
 function renderMonthCard(monthKey, data, isCurrentMonth) {
-  const DAY_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
   const mName = getMonthName(monthKey);
   const bought = data.bought || [];
   const left = data.left || [];
@@ -2487,12 +2568,22 @@ function renderMonthCard(monthKey, data, isCurrentMonth) {
   const endCount = isCurrentMonth
     ? (startCount + bought.length - left.length)
     : (data.endCount || startCount + bought.length - left.length);
-  const revenue = bought.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+
+  // Суммы
+  const boughtSum = bought.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const leftSum = left.reduce((s,c)=>s+(parseFloat(c.abAmount)||0),0);
+  const totalSum = boughtSum - leftSum;
+
+  // Ручные корректировки
+  const manualAdj = data.manualAdjustments || [];
 
   let h = `<div style="background:white;border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
     <div style="background:linear-gradient(135deg,#880e4f,#c2185b);color:white;padding:14px 16px;">
-      <div style="font-size:14px;font-weight:800;margin-bottom:8px;">${isCurrentMonth?'📅 '+mName+' (текущий)':'📅 '+mName}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:800;">${isCurrentMonth?'📅 '+mName+' (текущий)':'📅 '+mName}</div>
+        <button onclick="openMonthAdjustModal('${monthKey}')" style="background:rgba(255,255,255,0.2);color:white;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Поправить</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:8px;text-align:center;">
           <div style="font-size:16px;font-weight:800;">${startCount}</div>
           <div style="font-size:9px;opacity:0.85;">Начало</div>
@@ -2510,34 +2601,60 @@ function renderMonthCard(monthKey, data, isCurrentMonth) {
           <div style="font-size:9px;opacity:0.85;">${isCurrentMonth?'Сейчас':'Конец'}</div>
         </div>
       </div>
+      <div style="background:rgba(255,255,255,0.15);border-radius:10px;padding:10px 14px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+          <span style="font-size:12px;opacity:0.85;">💚 Пришли</span>
+          <span style="font-size:13px;font-weight:700;color:#a5d6a7;">${boughtSum.toLocaleString('ru-RU')} ₽</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:12px;opacity:0.85;">🧡 Ушли (возвраты)</span>
+          <span style="font-size:13px;font-weight:700;color:#ffcc80;">${leftSum>0?'−'+leftSum.toLocaleString('ru-RU')+' ₽':'—'}</span>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.3);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:13px;font-weight:800;">💰 Итого выручка</span>
+          <span style="font-size:18px;font-weight:800;">${totalSum.toLocaleString('ru-RU')} ₽</span>
+        </div>
+      </div>
     </div>
-    <div style="padding:14px 16px;">
-      ${revenue>0?`<div style="background:var(--pink-bg);border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:12px;color:var(--pink);font-weight:600;">💰 Выручка</span><span style="font-size:16px;font-weight:800;color:var(--pink);">${revenue.toLocaleString('ru-RU')} ₽</span></div>`:''}`;
+    <div style="padding:14px 16px;">`;
 
   if (bought.length) {
-    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px;">✅ Купили (${bought.length}):</div>`;
+    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px;">✅ Купили (${bought.length}) — ${boughtSum.toLocaleString('ru-RU')} ₽:</div>`;
     bought.forEach((c,i)=>{
       h += `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6;">
         <div style="background:var(--green);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
         <div style="flex:1;"><div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div><div style="font-size:11px;color:var(--muted);">${c.group||''} ${c.date?'· '+c.date:''}</div></div>
-        ${c.abAmount?`<span style="font-size:12px;font-weight:700;color:var(--green);white-space:nowrap;">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
+        ${c.abAmount?`<span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
       </div>`;
     });
     h += `</div>`;
   }
 
   if (left.length) {
-    h += `<div><div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:6px;">👋 Ушли (${left.length}):</div>`;
+    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:6px;">👋 Ушли (${left.length}):</div>`;
     left.forEach((c,i)=>{
       h += `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6;">
         <div style="background:var(--orange);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
         <div style="flex:1;"><div style="font-size:13px;font-weight:700;">${c.abChild||c.name}</div><div style="font-size:11px;color:var(--muted);">${c.group||''} ${c.date?'· '+c.date:''}</div><div style="font-size:11px;color:var(--orange);margin-top:2px;">Причина: ${c.reason||'—'}</div></div>
+        ${c.abAmount?`<span style="font-size:12px;font-weight:700;color:var(--orange);white-space:nowrap;">${parseFloat(c.abAmount).toLocaleString('ru-RU')} ₽</span>`:''}
       </div>`;
     });
     h += `</div>`;
   }
 
-  if (!bought.length && !left.length) h += `<div style="text-align:center;color:var(--muted);font-size:13px;padding:10px 0;">Данных нет</div>`;
+  if (manualAdj.length) {
+    h += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:var(--purple);margin-bottom:6px;">✏️ Ручные корректировки:</div>`;
+    manualAdj.forEach((a,i)=>{
+      h += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;">
+        <div style="background:var(--purple);color:white;border-radius:50%;width:20px;height:20px;min-width:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i+1}</div>
+        <div style="flex:1;font-size:12px;color:var(--text);">${a.comment}</div>
+        <span style="font-size:12px;font-weight:700;color:var(--purple);white-space:nowrap;">${a.amount>0?'+':''}${parseFloat(a.amount||0).toLocaleString('ru-RU')} ₽</span>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  if (!bought.length && !left.length && !manualAdj.length) h += `<div style="text-align:center;color:var(--muted);font-size:13px;padding:10px 0;">Данных нет</div>`;
   h += `</div></div>`;
   return h;
 }
@@ -2678,7 +2795,42 @@ function markAsBought(id) {
   archiveBoughtEntry(clients[idx]);
   openAbonementModal(id);
 }
-// ============ TASK MODAL ============
+// ============ MONTH ADJUSTMENT ============
+let adjMonthKey = null;
+
+function openMonthAdjustModal(monthKey) {
+  adjMonthKey = monthKey;
+  document.getElementById('month-adjust-title').textContent = 'Месяц: ' + getMonthName(monthKey);
+  document.getElementById('adj-type').value = 'bought';
+  document.getElementById('adj-name').value = '';
+  document.getElementById('adj-amount').value = '';
+  document.getElementById('month-adjust-modal').classList.add('open');
+}
+
+function saveMonthAdjust() {
+  const type = document.getElementById('adj-type').value;
+  const name = document.getElementById('adj-name').value.trim();
+  const amount = document.getElementById('adj-amount').value;
+  if (!name) { showToast('⚠️ Напиши имя или комментарий!'); return; }
+
+  const archive = getMonthArchive(adjMonthKey);
+  const now = new Date();
+  const date = now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  if (type === 'bought') {
+    archive.bought.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, manual: true });
+  } else if (type === 'left') {
+    archive.left.push({ id: Date.now(), name, abChild: name, group: '', abAmount: amount, date, reason: 'Ручная запись', manual: true });
+  } else {
+    if (!archive.manualAdjustments) archive.manualAdjustments = [];
+    archive.manualAdjustments.push({ comment: name, amount: parseFloat(amount)||0, date });
+  }
+
+  saveMonthArchive(adjMonthKey, archive);
+  closeModal('month-adjust-modal');
+  showToast('✅ Запись добавлена!');
+  renderActive();
+}
 let taskTargetId = null;
 
 function openTaskModal(id) {
@@ -2872,7 +3024,81 @@ function markNotArrived(id) {
   else render();
 }
 
-// ============ НЕ АКТУАЛЬНЫЕ ============
+// ============ ПРОСРОЧЕННЫЕ ============
+function renderOverdueHub() {
+  const el = document.getElementById('content');
+  const q = getSearchQuery();
+  const list = clients
+    .filter(c => isOverdue(c) && matchesSearch(c,q))
+    .sort((a,b) => new Date(a.nextCall) - new Date(b.nextCall));
+
+  if (!list.length) {
+    el.innerHTML = `<div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:52px;margin-bottom:12px;">✅</div>
+      <p style="color:var(--muted);font-size:14px;">Просроченных задач нет!</p>
+    </div>`;
+    return;
+  }
+
+  let html = `<div style="background:var(--red-bg);border:2px solid var(--red);border-radius:14px;padding:14px 16px;margin-bottom:16px;">
+    <div style="font-size:14px;font-weight:800;color:var(--red);margin-bottom:4px;">🔴 Просроченные задачи (${list.length})</div>
+    <div style="font-size:12px;color:var(--red);opacity:0.8;">Задачи у которых дата звонка уже прошла</div>
+    <button onclick="rescheduleAllOverdue()" style="margin-top:10px;width:100%;background:var(--red);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📅 Перенести все на сегодня</button>
+  </div>`;
+
+  list.forEach(c => {
+    const s = STATUS_MAP[c.status] || STATUSES[0];
+    const overdueStr = c.nextCall ? new Date(c.nextCall).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+    const todayTasks = (c.tasks||[]).filter(t => { const d=new Date(t.date); return !t.done && new Date(t.date) < todayStart(); });
+
+    html += `<div class="card overdue-card">
+      <div class="card-header">
+        <div class="card-name">${c.name}</div>
+        <div class="status-pill" style="${s.pill}">${s.label}</div>
+      </div>
+      <div class="card-meta">
+        ${c.group?`<span class="meta-tag group">👥 ${c.group}</span>`:''}
+        ${c.channel?`<span class="meta-tag">${c.channel}</span>`:''}
+        <span class="meta-tag overdue">🔴 Просрочено: ${overdueStr}</span>
+      </div>
+      ${c.notes?`<div class="card-notes">${c.notes}</div>`:''}
+      ${todayTasks.map(t=>`<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:12px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('')}
+      ${contactButtons(c)}
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Итог</button>
+        <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
+        <button onclick="rescheduleToToday(${c.id})" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📅</button>
+        <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">⚙️</button>
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+function rescheduleToToday(id) {
+  const idx = clients.findIndex(x=>x.id===id); if(idx<0) return;
+  clients[idx].nextCall = new Date().toISOString().split('T')[0] + 'T09:00';
+  clients[idx].updatedAt = new Date().toISOString();
+  save();
+  showToast('📅 Перенесено на сегодня!');
+  renderOverdueHub();
+}
+
+function rescheduleAllOverdue() {
+  const today = new Date().toISOString().split('T')[0] + 'T09:00';
+  let count = 0;
+  clients.forEach((c,i) => {
+    if (isOverdue(c)) {
+      clients[i].nextCall = today;
+      clients[i].updatedAt = new Date().toISOString();
+      count++;
+    }
+  });
+  save();
+  showToast(`📅 ${count} задач перенесено на сегодня!`);
+  renderOverdueHub();
+}
 function renderDeclinedHub() {
   const el = document.getElementById('content');
   const q = getSearchQuery();
