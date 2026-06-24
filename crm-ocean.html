@@ -3893,25 +3893,19 @@ async function tgLoad() {
     const data = await dataRes.json();
 
     if (data.clients && data.clients.length > 0) {
-      const remoteTime = new Date(data.savedAt).getTime();
-      // Compare against savedAt of last TG file we loaded — not against phone's local clock.
-      // Using ocean_last_save caused a bug: tgLoad called save(), bumping ocean_last_save
-      // to phone's current time (slightly after remoteTime), so next check always skipped.
-      const lastTgAt = parseInt(localStorage.getItem('ocean_tg_loaded_at') || '0');
-      const lastLocalSave = parseInt(localStorage.getItem('ocean_last_save') || '0');
-      // Baseline: max of (last TG file we loaded) and (last local save).
-      // This protects local edits: if user saved locally after last TG load,
-      // only load TG if TG file is newer than that local save too.
-      const baseline = Math.max(lastTgAt, lastLocalSave);
+      // Use Telegram message_id as version — it's a monotonically increasing integer
+      // assigned by Telegram, so it's immune to clock skew between devices.
+      const latestMsgId = docs[0].message.message_id;
+      const lastMsgId = parseInt(localStorage.getItem('ocean_tg_msg_id') || '0');
       const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 
-      if (remoteTime > baseline) {
+      if (latestMsgId > lastMsgId) {
         clients = data.clients;
         if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
-        // Write directly to localStorage — do NOT call save(), which would call scheduleTgSave()
-        // and cause the phone to re-upload stale data with a fresh timestamp.
+        // Write directly — do NOT call save() which triggers scheduleTgSave() and
+        // causes the device to re-upload the same data with a fresh message, creating loops.
         localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-        localStorage.setItem('ocean_tg_loaded_at', remoteTime.toString());
+        localStorage.setItem('ocean_tg_msg_id', latestMsgId.toString());
         renderTabs();
         renderCurrentTab();
         setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7', false);
