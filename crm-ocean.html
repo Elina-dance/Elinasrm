@@ -196,6 +196,10 @@
     <div class="header-title">
       <h1>Движение Океана</h1>
       <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span></p>
+      <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
+        <span id="tg-sync-icon">☁️</span>
+        <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
+      </div>
     </div>
     <button class="btn-export" onclick="openExportModal()" id="export-btn">📤 Экспорт</button>
 <button class="btn-add" onclick="importNewClients()" style="background:#7c4dff;">⬇️ Новые</button>
@@ -3798,9 +3802,17 @@ const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
 let tgSyncTimer = null;
 let lastSyncTime = 0;
 
+function setTgBar(icon, text, color) {
+  const iconEl = document.getElementById('tg-sync-icon');
+  const textEl = document.getElementById('tg-sync-text');
+  if (iconEl) iconEl.textContent = icon;
+  if (textEl) { textEl.textContent = text; textEl.style.color = color; }
+}
+
 // Сохранение в Telegram как файл
 async function tgSave() {
   try {
+    setTgBar('📤', 'Отправка в TG...', '#ffd54f');
     const data = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
@@ -3812,34 +3824,44 @@ async function tgSave() {
     formData.append('chat_id', TG_CHAT_ID);
     formData.append('document', blob, 'crm-data.json');
     formData.append('caption', '💾 CRM sync ' + new Date().toLocaleString('ru-RU'));
-    await fetch(`${TG_API}/sendDocument`, { method: 'POST', body: formData });
+    const resp = await fetch(`${TG_API}/sendDocument`, { method: 'POST', body: formData });
+    const result = await resp.json();
     lastSyncTime = Date.now();
-    updateSyncStatus('✅ Синхронизировано ' + new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}));
+    if (result.ok) {
+      const t = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+      setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7');
+      updateSyncStatus('✅ ' + t);
+    } else {
+      setTgBar('⚠️', 'Ошибка TG: ' + (result.description||''), '#ff8a80');
+      updateSyncStatus('⚠️ Ошибка');
+    }
   } catch(e) {
     console.log('TG save error:', e);
-    updateSyncStatus('⚠️ Ошибка синхронизации');
+    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80');
+    updateSyncStatus('⚠️ Нет связи');
   }
 }
 
 // Загрузка из Telegram
 async function tgLoad() {
   try {
+    setTgBar('🔄', 'Проверяю TG...', '#ffd54f');
     updateSyncStatus('🔄 Загрузка...');
     const res = await fetch(`${TG_API}/getUpdates?limit=50&offset=-50`);
     const json = await res.json();
-    if (!json.ok) { updateSyncStatus('⚠️ Ошибка TG'); return false; }
+    if (!json.ok) { setTgBar('⚠️', 'Ошибка TG', '#ff8a80'); updateSyncStatus('⚠️ Ошибка TG'); return false; }
 
     // Ищем последний документ с нашими данными
     const docs = json.result
       .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
       .sort((a,b) => b.message.date - a.message.date);
 
-    if (!docs.length) { updateSyncStatus('📭 Нет данных в TG'); return false; }
+    if (!docs.length) { setTgBar('📭', 'Нет данных в TG', '#ffd54f'); updateSyncStatus('📭 Нет данных в TG'); return false; }
 
     const fileId = docs[0].message.document.file_id;
     const fileRes = await fetch(`${TG_API}/getFile?file_id=${fileId}`);
     const fileJson = await fileRes.json();
-    if (!fileJson.ok) { updateSyncStatus('⚠️ Ошибка файла'); return false; }
+    if (!fileJson.ok) { setTgBar('⚠️', 'Ошибка файла', '#ff8a80'); updateSyncStatus('⚠️ Ошибка файла'); return false; }
 
     const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
     const dataRes = await fetch(fileUrl);
@@ -3849,6 +3871,7 @@ async function tgLoad() {
       // Сравниваем время — берём свежее
       const remoteTime = new Date(data.savedAt).getTime();
       const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+      const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 
       if (remoteTime > localTime) {
         clients = data.clients;
@@ -3856,16 +3879,19 @@ async function tgLoad() {
         save();
         renderTabs();
         renderCurrentTab();
-        updateSyncStatus('✅ Загружено из TG ' + new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}));
+        setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7');
+        updateSyncStatus('✅ Загружено из TG ' + tgTimeStr);
         showToast('✅ Данные загружены с другого устройства!');
         return true;
       } else {
+        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7');
         updateSyncStatus('✅ Актуально');
         return false;
       }
     }
   } catch(e) {
     console.log('TG load error:', e);
+    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80');
     updateSyncStatus('⚠️ Ошибка загрузки');
     return false;
   }
