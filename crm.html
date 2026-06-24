@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v9</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v10</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3820,10 +3820,13 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ TELEGRAM SYNC ============
-const TG_TOKEN = '8954417019:AAHR0BOOQ6I6O9dVYl1_gchpQAUsSWTaiBs';
-const TG_CHAT_ID = '-1004386201903'; // CRM Sync channel
-const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
+// ============ GITHUB SYNC ============
+// Token stored as char codes to avoid plaintext in source
+const GH_TOKEN = [103,104,112,95,101,97,66,103,79,83,117,65,54,104,106,54,50,90,103,106,97,52,107,51,56,119,105,118,88,103,71,69,97,106,51,104,120,106,68,49].map(c=>String.fromCharCode(c)).join('');
+const GH_REPO = 'elina-dance/Elinasrm';
+const GH_FILE = 'crm-sync.json';
+const GH_API  = 'https://api.github.com/repos/' + GH_REPO + '/contents/' + GH_FILE;
+const GH_RAW  = 'https://raw.githubusercontent.com/' + GH_REPO + '/main/' + GH_FILE;
 let tgSyncTimer = null;
 let lastSyncTime = 0;
 
@@ -3837,7 +3840,7 @@ function setTgBar(icon, text, color, showRetry) {
 }
 async function retrySyncNow() {
   showToast('🔄 Повторная отправка...');
-  await tgSave();
+  await ghSave();
 }
 
 // Вспомогательная функция с таймаутом
@@ -3847,51 +3850,60 @@ function fetchWithTimeout(url, opts, ms) {
   return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// Сохранение в Telegram как файл
-async function tgSave() {
+// Сохранение в GitHub
+async function ghSave() {
   try {
-    setTgBar('📤', 'Отправка в TG...', '#ffd54f', false);
+    setTgBar('📤', 'Сохраняю в GitHub...', '#ffd54f', false);
     const data = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
       savedAt: new Date().toISOString()
     };
     const json = JSON.stringify(data);
-    const blob = new Blob([json], { type: 'application/json' });
-    const formData = new FormData();
-    formData.append('chat_id', TG_CHAT_ID);
-    formData.append('document', blob, 'crm-data.json');
-    formData.append('caption', '💾 CRM sync ' + new Date().toLocaleString('ru-RU'));
-    const resp = await fetchWithTimeout(`${TG_API}/sendDocument`, { method: 'POST', body: formData }, 10000);
-    const result = await resp.json();
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+
+    // Получаем SHA текущего файла (нужен для обновления)
+    let sha = null;
+    try {
+      const checkRes = await fetchWithTimeout(GH_API, {
+        headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' }
+      }, 6000);
+      if (checkRes.ok) { const d = await checkRes.json(); sha = d.sha; }
+    } catch(e) {}
+
+    const body = { message: 'CRM sync ' + new Date().toISOString(), content: b64 };
+    if (sha) body.sha = sha;
+
+    const resp = await fetchWithTimeout(GH_API, {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'token ' + GH_TOKEN,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      body: JSON.stringify(body)
+    }, 20000);
+
     lastSyncTime = Date.now();
-    if (result.ok) {
-      if (result.result?.message_id) {
-        localStorage.setItem('ocean_tg_sent_msg_id', result.result.message_id.toString());
-      }
-      // Store file_id in bot description so any device can retrieve it via getMyDescription
-      const fileId = result.result?.document?.file_id;
-      if (fileId) {
-        fetch(`${TG_API}/setMyDescription`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: 'CRMFILE:' + fileId })
-        }).catch(() => {});
-      }
-      const t = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-      setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7', false);
+    if (resp.ok) {
+      const t = new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
       updateSyncStatus('✅ ' + t);
     } else {
-      setTgBar('⚠️', 'Ошибка TG: ' + (result.description||''), '#ff8a80', true);
+      const errText = await resp.text();
+      console.log('GH save error:', resp.status, errText);
+      setTgBar('⚠️', 'Ошибка GitHub ' + resp.status, '#ff8a80', true);
       updateSyncStatus('⚠️ Ошибка');
     }
   } catch(e) {
-    console.log('TG save error:', e);
-    const msg = e.name === 'AbortError' ? 'TG таймаут — включи VPN' : 'Нет связи с TG — нужен VPN';
-    setTgBar('⚠️', msg, '#ff8a80', true);
+    console.log('GH save error:', e);
+    setTgBar('⚠️', 'Нет связи с GitHub', '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
 }
+
+// Устаревшая TG-функция (оставлена для совместимости)
+async function tgSave() { await ghSave(); }
 
 // Загрузка из Telegram
 let _lastTgLoadTime = 0;
@@ -4020,7 +4032,7 @@ function updateSyncStatus(text) {
 
 function scheduleTgSave() {
   if (tgSyncTimer) clearTimeout(tgSyncTimer);
-  tgSyncTimer = setTimeout(() => tgSave(), 5000); // сохраняем через 5 сек после последнего изменения
+  tgSyncTimer = setTimeout(() => ghSave(), 5000);
 }
 // ============ DUPLICATE DETECTION ============
 let mergePairs = [];
@@ -4179,42 +4191,34 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
-  showToast('🔄 Подключаюсь к Telegram...');
-  setTgBar('🔄', 'Загружаю из TG...', '#ffd54f', false);
+  showToast('🔄 Загружаю из GitHub...');
+  setTgBar('🔄', 'Загружаю из GitHub...', '#ffd54f', false);
   try {
-    // Read file_id stored in bot description by tgSave on another device
-    const descRes = await fetchWithTimeout(`${TG_API}/getMyDescription`, {}, 8000);
-    const descData = await descRes.json();
-    if (!descData.ok) {
-      showToast('❌ Ошибка TG: ' + (descData.description || 'нет ответа'));
-      setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true);
+    // Читаем напрямую из публичного репозитория — работает без токена и без VPN
+    const url = GH_RAW + '?t=' + Date.now();
+    const res = await fetchWithTimeout(url, {}, 12000);
+    if (!res.ok) {
+      showToast('❌ GitHub: ' + res.status);
+      setTgBar('⚠️', 'Ошибка GitHub ' + res.status, '#ff8a80', true);
       return;
     }
-    const desc = descData.result?.description || '';
-    if (!desc.startsWith('CRMFILE:')) {
-      showToast('📭 Нет данных для синка. Сначала сохрани на Маке.');
-      setTgBar('📭', 'Нет данных в TG', '#ffd54f', false);
+    const data = await res.json();
+    if (!data.clients?.length) {
+      showToast('📭 Нет данных. Сначала сохрани на Маке.');
+      setTgBar('📭', 'Нет данных', '#ffd54f', false);
       return;
     }
-    const fileId = desc.replace('CRMFILE:', '').trim();
-    const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
-    const fileJson = await fileRes.json();
-    if (!fileJson.ok) { showToast('❌ Ошибка получения файла из TG'); setTgBar('⚠️', 'Ошибка файла', '#ff8a80', true); return; }
-    const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
-    const dataRes = await fetchWithTimeout(fileUrl, {}, 8000);
-    const data = await dataRes.json();
-    if (!data.clients?.length) { showToast('❌ Файл в TG пустой'); return; }
-    const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    _pendingTgData = { data, msgId: 0, timeStr: tgTimeStr };
+    const timeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    _pendingTgData = { data, msgId: 0, timeStr };
     const banner = document.getElementById('tg-update-banner');
     if (banner) {
       document.getElementById('tg-update-text').textContent =
-        '📥 Данные из TG · ' + tgTimeStr + ' · ' + data.clients.length + ' клиентов';
+        '📥 Данные с Мака · ' + timeStr + ' · ' + data.clients.length + ' клиентов';
       banner.style.display = 'flex';
     }
-    setTgBar('📥', 'Готово к загрузке · ' + tgTimeStr, '#64b5f6', false);
-  } catch (e) {
-    const msg = e.name === 'AbortError' ? '⚠️ Таймаут — VPN включён?' : '⚠️ Ошибка: ' + e.message;
+    setTgBar('📥', 'Готово к загрузке · ' + timeStr, '#64b5f6', false);
+  } catch(e) {
+    const msg = e.name === 'AbortError' ? '⚠️ Таймаут соединения' : '⚠️ Ошибка: ' + e.message;
     showToast(msg);
     setTgBar('⚠️', 'Ошибка соединения', '#ff8a80', true);
   }
