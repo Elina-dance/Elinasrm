@@ -1096,8 +1096,22 @@ function load() {
 let saveTimer = null;
 function save() {
   try {
-    localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-    localStorage.setItem('ocean_last_save', Date.now().toString());
+    const dataStr = JSON.stringify(clients);
+    localStorage.setItem('ocean_crm_v3', dataStr);
+    const now = Date.now();
+    localStorage.setItem('ocean_last_save', now.toString());
+    // Verify save actually worked
+    const verify = localStorage.getItem('ocean_crm_v3');
+    const el = document.getElementById('ls-debug');
+    if (verify !== dataStr) {
+      showToast('⚠️ ОШИБКА: браузер не сохраняет данные! Проверь настройки Safari (куки/приватный режим)');
+      if (el) el.textContent = '[LS: НЕ РАБОТАЕТ!]';
+      return;
+    }
+    if (el) {
+      const t = new Date(now).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      el.textContent = '[LS: ' + clients.length + ' кл · ' + t + ']';
+    }
     const banner = document.getElementById('save-banner');
     if (banner) {
       banner.style.display = 'block';
