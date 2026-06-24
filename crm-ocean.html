@@ -200,6 +200,7 @@
     <button class="btn-export" onclick="openExportModal()" id="export-btn">📤 Экспорт</button>
     <button class="btn-add" onclick="tgLoad()" style="background:#2196f3;" title="Загрузить данные из Telegram">📲 Из TG</button>
     <button class="btn-add" onclick="importNewClients()" style="background:#7c4dff;">⬇️ Новые</button>
+    <button class="btn-add" onclick="openImportModal()" style="background:#00897b;" title="Импортировать карточки из текста или JSON">📥 Импорт</button>
     <button class="btn-add" onclick="findDuplicates()" style="background:#ff6d00;" title="Найти дубли по номеру">🔗 Дубли</button>
     <button class="btn-add" onclick="openAddModal()">+ Клиент</button>
   </div>
@@ -631,6 +632,37 @@
         📊 Ученик перейдёт в архив этого месяца — данные сохранятся для анализа
       </div>
       <button class="btn-save" onclick="saveLeft()" style="background:var(--orange);">👋 Подтвердить уход</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📥 Импорт карточек</span>
+      <button class="btn-close" onclick="closeModal('import-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:var(--foam);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--wave);line-height:1.7;">
+        <strong>Простой формат</strong> — каждая строка: <code style="background:#e3f0fb;padding:1px 5px;border-radius:4px;">Имя; Телефон; Группа; Канал; Статус; Примечание</code><br>
+        Минимум — только имя. Пример:<br>
+        <code style="background:#e3f0fb;padding:2px 6px;border-radius:4px;font-size:12px;">Маша 5 л. — мама Света; 89001234567; Младшие; Авито</code>
+      </div>
+      <div class="form-group">
+        <label>Формат</label>
+        <select id="import-format" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;">
+          <option value="simple">Простой текст (строки через «;»)</option>
+          <option value="json">JSON-массив</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Данные для импорта</label>
+        <textarea id="import-data" rows="8" style="width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:monospace;resize:vertical;" placeholder="Маша 5 л. — мама Света; 89001234567; Младшие; Авито&#10;Лиза 7 л. — мама Катя; 89007654321; Средние&#10;Аня 4 г. — мама Оля; ; Малыши"></textarea>
+      </div>
+      <button onclick="previewImport()" style="background:var(--wave);color:white;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;width:100%;cursor:pointer;margin-bottom:12px;">🔍 Проверить</button>
+      <div id="import-preview" style="display:none;margin-bottom:12px;"></div>
+      <button id="confirm-import-btn" onclick="confirmImport()" class="btn-save" style="display:none;">✅ Добавить карточки в CRM</button>
     </div>
   </div>
 </div>
@@ -3613,6 +3645,107 @@ function renderDeclinedHub() {
   });
 
   el.innerHTML = html;
+}
+
+// ============ IMPORT ============
+function openImportModal() {
+  document.getElementById('import-data').value = '';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('confirm-import-btn').style.display = 'none';
+  document.getElementById('import-format').value = 'simple';
+  window._importPending = [];
+  document.getElementById('import-modal').classList.add('open');
+}
+
+function previewImport() {
+  const format = document.getElementById('import-format').value;
+  const raw = document.getElementById('import-data').value.trim();
+  if (!raw) { showToast('⚠️ Нет данных для импорта'); return; }
+
+  let parsed = [];
+  if (format === 'json') {
+    try {
+      parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) { showToast('⚠️ JSON должен быть массивом [ ]'); return; }
+    } catch(e) { showToast('⚠️ Ошибка JSON: ' + e.message); return; }
+  } else {
+    const lines = raw.split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      const parts = line.split(';').map(p => p.trim());
+      if (!parts[0]) continue;
+      parsed.push({
+        name: parts[0] || '',
+        phone: parts[1] || '',
+        group: parts[2] || '',
+        channel: parts[3] || '',
+        status: parts[4] || 'new',
+        notes: parts[5] || '',
+      });
+    }
+  }
+
+  if (!parsed.length) { showToast('⚠️ Не удалось распознать данные'); return; }
+
+  const existingPhones = new Set();
+  clients.forEach(c => {
+    if (c.phone) {
+      const clean = c.phone.replace(/\D/g,'').replace(/^[78]/,'');
+      if (clean.length >= 9) existingPhones.add(clean);
+    }
+  });
+  const existingIds = new Set(clients.map(c => c.id));
+  let maxId = clients.reduce((m, c) => Math.max(m, c.id || 0), 0);
+
+  const toAdd = [], skipped = [];
+  for (const card of parsed) {
+    if (card.id && existingIds.has(card.id)) { skipped.push({...card, _reason:'ID уже есть'}); continue; }
+    if (card.phone) {
+      const cp = card.phone.replace(/\D/g,'').replace(/^[78]/,'');
+      if (cp.length >= 9 && existingPhones.has(cp)) { skipped.push({...card, _reason:'Телефон уже есть'}); continue; }
+    }
+    if (!card.id) { maxId++; card.id = maxId; }
+    card.history = card.history || [];
+    card.nextCall = card.nextCall || '';
+    card.trial = card.trial || '';
+    toAdd.push(card);
+  }
+
+  let html = '';
+  if (toAdd.length) {
+    html += `<div style="background:#e8f5e9;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;color:#1a5c3a;font-weight:600;">✅ Будет добавлено: ${toAdd.length} карточек</div>`;
+    html += '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
+    toAdd.forEach(c => {
+      html += `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;"><strong>${c.name}</strong>${c.phone ? ' · ' + c.phone : ''}${c.group ? ' · ' + c.group : ''}</div>`;
+    });
+    html += '</div>';
+  }
+  if (skipped.length) {
+    html += `<div style="background:#fff3e0;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;color:#7a4000;font-weight:600;">⚠️ Пропущено (дубли): ${skipped.length}</div>`;
+    html += '<div style="max-height:100px;overflow-y:auto;border:1px solid #ffe0b2;border-radius:8px;margin-top:4px;">';
+    skipped.forEach(c => {
+      html += `<div style="padding:5px 10px;border-bottom:1px solid #ffe0b2;font-size:11px;color:#7a4000;">${c.name} — ${c._reason}</div>`;
+    });
+    html += '</div>';
+  }
+
+  document.getElementById('import-preview').innerHTML = html;
+  document.getElementById('import-preview').style.display = 'block';
+  window._importPending = toAdd;
+  document.getElementById('confirm-import-btn').style.display = toAdd.length ? 'block' : 'none';
+  if (!toAdd.length) showToast('ℹ️ Все карточки уже есть в базе');
+}
+
+function confirmImport() {
+  const toAdd = window._importPending || [];
+  if (!toAdd.length) { showToast('⚠️ Нет данных'); return; }
+  clients.unshift(...[...toAdd].reverse());
+  save();
+  updateExportBadge();
+  render();
+  closeModal('import-modal');
+  showToast(`✅ Добавлено ${toAdd.length} карточек!`);
+  window._importPending = [];
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
