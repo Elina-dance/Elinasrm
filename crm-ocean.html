@@ -268,6 +268,18 @@
       <div class="form-group">
         <label>Статус</label>
         <div class="status-grid" id="status-grid-edit"></div>
+        <div id="later-date-helper-edit" style="display:none;background:#ede7ff;border-radius:10px;padding:12px 14px;margin-top:10px;">
+          <div style="font-size:12px;font-weight:700;color:#4a148c;margin-bottom:8px;">📅 Когда написать / позвонить?</div>
+          <input id="later-quick-edit" type="date" style="width:100%;padding:10px 12px;border:1.5px solid #b39ddb;border-radius:8px;font-size:15px;margin-bottom:8px;" oninput="document.getElementById('f-next-call').value=this.value?this.value+'T10:00':''">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <button type="button" onclick="setLaterQuickEdit(7)"  style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+1 нед.</button>
+            <button type="button" onclick="setLaterQuickEdit(30)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+1 мес.</button>
+            <button type="button" onclick="setLaterQuickEdit(90)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+3 мес.</button>
+            <button type="button" onclick="setLaterQuickEdit(60)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+2 мес.</button>
+            <button type="button" onclick="setLaterQuickEdit(180)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+полгода</button>
+            <button type="button" onclick="setLaterQuickEdit(270)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+9 мес.</button>
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label>Комментарий / Заметки</label>
@@ -356,6 +368,18 @@
       <div class="form-group" style="margin-top:12px;">
         <label>Какой статус оставить?</label>
         <div id="merge-status-grid" class="status-grid"></div>
+        <div id="later-date-helper-merge" style="display:none;background:#ede7ff;border-radius:10px;padding:12px 14px;margin-top:10px;">
+          <div style="font-size:12px;font-weight:700;color:#4a148c;margin-bottom:8px;">📅 Когда написать / позвонить?</div>
+          <input id="later-quick-merge" type="date" style="width:100%;padding:10px 12px;border:1.5px solid #b39ddb;border-radius:8px;font-size:15px;margin-bottom:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <button type="button" onclick="setLaterQuickMerge(7)"  style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+1 нед.</button>
+            <button type="button" onclick="setLaterQuickMerge(30)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+1 мес.</button>
+            <button type="button" onclick="setLaterQuickMerge(90)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+3 мес.</button>
+            <button type="button" onclick="setLaterQuickMerge(60)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+2 мес.</button>
+            <button type="button" onclick="setLaterQuickMerge(180)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+полгода</button>
+            <button type="button" onclick="setLaterQuickMerge(270)" style="background:white;color:#7c4dff;border:1.5px solid #7c4dff;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">+9 мес.</button>
+          </div>
+        </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
         <button onclick="confirmMerge()" style="background:var(--wave);color:white;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;">🔗 Объединить</button>
@@ -2217,6 +2241,15 @@ function selectStatus(s) {
   }
   selectedStatus = s;
   renderStatusGrid('status-grid-edit', s, 'selectStatus');
+  // Показываем дату для "Вернутся через время"
+  const laterHelper = document.getElementById('later-date-helper-edit');
+  if (s === 'later') {
+    laterHelper.style.display = 'block';
+    if (!document.getElementById('later-quick-edit').value) setLaterQuickEdit(30);
+    setTimeout(() => laterHelper.scrollIntoView({behavior:'smooth', block:'nearest'}), 50);
+  } else {
+    laterHelper.style.display = 'none';
+  }
   // Для действующих очищаем дату звонка — она необязательна
   if (s === 'bought') {
     document.getElementById('f-next-call').value = '';
@@ -2226,6 +2259,12 @@ function selectStatus(s) {
     const lbl = document.getElementById('next-call-optional');
     if (lbl) lbl.style.display = 'none';
   }
+}
+function setLaterQuickEdit(days) {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  const val = d.toISOString().split('T')[0];
+  document.getElementById('later-quick-edit').value = val;
+  document.getElementById('f-next-call').value = val + 'T10:00';
 }
 function saveClient() {
   const name=document.getElementById('f-name').value.trim();
@@ -3906,6 +3945,17 @@ function showMergeModal() {
 function selectMergeStatus(s) {
   selectedMergeStatus = s;
   renderStatusGrid('merge-status-grid', s, 'selectMergeStatus');
+  const laterHelper = document.getElementById('later-date-helper-merge');
+  if (s === 'later') {
+    laterHelper.style.display = 'block';
+    if (!document.getElementById('later-quick-merge').value) setLaterQuickMerge(30);
+  } else {
+    laterHelper.style.display = 'none';
+  }
+}
+function setLaterQuickMerge(days) {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  document.getElementById('later-quick-merge').value = d.toISOString().split('T')[0];
 }
 
 function confirmMerge() {
@@ -3918,6 +3968,11 @@ function confirmMerge() {
     const c = clients[keepIdx];
     // Устанавливаем выбранный статус
     c.status = selectedMergeStatus;
+    // Если статус "later" — берём дату из поля
+    if (selectedMergeStatus === 'later') {
+      const dateVal = document.getElementById('later-quick-merge').value;
+      if (dateVal) c.nextCall = dateVal + 'T10:00';
+    }
     // Объединяем имя — берём более информативное
     if (remove.name && remove.name.length > c.name.length) c.name = remove.name;
     // Заметки
