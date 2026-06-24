@@ -4184,14 +4184,18 @@ async function manualTgLoad() {
     }
     const allUpdates = json.result || [];
     const docs = allUpdates
-      .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
-      .sort((a, b) => b.message.date - a.message.date);
+      .filter(u => {
+        const msg = u.message || u.channel_post;
+        return msg?.document && msg?.caption?.includes('CRM sync');
+      })
+      .map(u => u.message || u.channel_post)
+      .sort((a, b) => b.date - a.date);
     if (!docs.length) {
       showToast('📭 CRM-файлы не найдены в TG (проверено ' + allUpdates.length + ' сообщений)');
       setTgBar('📭', 'Нет данных в TG', '#ffd54f', false);
       return;
     }
-    const fileId = docs[0].message.document.file_id;
+    const fileId = docs[0].document.file_id;
     const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
     const fileJson = await fileRes.json();
     if (!fileJson.ok) { showToast('❌ Ошибка скачивания файла из TG'); return; }
@@ -4200,7 +4204,7 @@ async function manualTgLoad() {
     const data = await dataRes.json();
     if (!data.clients?.length) { showToast('❌ Файл в TG пустой'); return; }
     const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    _pendingTgData = { data, msgId: docs[0].message.message_id, timeStr: tgTimeStr };
+    _pendingTgData = { data, msgId: docs[0].message_id, timeStr: tgTimeStr };
     const banner = document.getElementById('tg-update-banner');
     if (banner) {
       document.getElementById('tg-update-text').textContent =
