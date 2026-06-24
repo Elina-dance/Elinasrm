@@ -189,6 +189,13 @@
 <body>
 
 <div id="save-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:500;background:#2e7d32;color:white;text-align:center;padding:8px;font-size:13px;font-weight:700;pointer-events:none;">✅ Сохранено</div>
+<div id="tg-update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:501;background:#1565c0;color:white;padding:10px 14px;font-size:13px;font-weight:600;align-items:center;justify-content:space-between;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+  <span id="tg-update-text">📥 Есть обновления с другого устройства</span>
+  <div style="display:flex;gap:8px;flex-shrink:0;">
+    <button onclick="confirmTgLoad()" style="background:white;color:#1565c0;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Загрузить</button>
+    <button onclick="dismissTgLoad()" style="background:rgba(255,255,255,0.2);color:white;border:none;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">✕</button>
+  </div>
+</div>
 <div id="overdue-banner" class="overdue-banner">🚨 Есть просроченные задачи! Смотри вкладку «Просрочено»</div>
 <div class="toast" id="toast"></div>
 
@@ -197,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:rgba(255,255,255,0.3);font-size:9px;">v5</span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3921,18 +3928,24 @@ async function tgLoad() {
       }
 
       if (latestMsgId > lastMsgId) {
-        clients = data.clients;
-        if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
-        // Write directly — do NOT call save() which triggers scheduleTgSave() and
-        // causes the device to re-upload the same data with a fresh message, creating loops.
-        localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-        localStorage.setItem('ocean_tg_msg_id', latestMsgId.toString());
-        renderTabs();
-        renderCurrentTab();
-        setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7', false);
-        updateSyncStatus('✅ Загружено из TG ' + tgTimeStr);
-        showToast('✅ Данные загружены с другого устройства!');
-        return true;
+        const hasLocalData = !!localStorage.getItem('ocean_crm_v3');
+        if (!hasLocalData) {
+          // Fresh device — auto-load, nothing to lose
+          _applyTgData(data, latestMsgId, tgTimeStr);
+          return true;
+        } else {
+          // Local data exists — never overwrite silently, ask user
+          _pendingTgData = { data, msgId: latestMsgId, timeStr: tgTimeStr };
+          const banner = document.getElementById('tg-update-banner');
+          if (banner) {
+            document.getElementById('tg-update-text').textContent =
+              '📥 Обновления с другого устройства (' + tgTimeStr + ')';
+            banner.style.display = 'flex';
+          }
+          setTgBar('📥', 'Доступны обновления · ' + tgTimeStr, '#64b5f6', false);
+          updateSyncStatus('📥 Обновление доступно');
+          return false;
+        }
       } else {
         setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
         updateSyncStatus('✅ Актуально');
@@ -3946,6 +3959,40 @@ async function tgLoad() {
     updateSyncStatus('⚠️ Ошибка загрузки');
     return false;
   }
+}
+
+let _pendingTgData = null;
+
+function _applyTgData(data, msgId, timeStr) {
+  clients = data.clients;
+  if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
+  localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+  localStorage.setItem('ocean_tg_msg_id', msgId.toString());
+  renderTabs();
+  renderCurrentTab();
+  setTgBar('📥', 'Загружено из TG в ' + timeStr, '#a5d6a7', false);
+  updateSyncStatus('✅ Загружено из TG ' + timeStr);
+}
+
+function confirmTgLoad() {
+  const banner = document.getElementById('tg-update-banner');
+  if (banner) banner.style.display = 'none';
+  if (!_pendingTgData) return;
+  _applyTgData(_pendingTgData.data, _pendingTgData.msgId, _pendingTgData.timeStr);
+  showToast('✅ Данные загружены с другого устройства!');
+  _pendingTgData = null;
+}
+
+function dismissTgLoad() {
+  const banner = document.getElementById('tg-update-banner');
+  if (banner) banner.style.display = 'none';
+  if (_pendingTgData) {
+    // Mark as seen so we don't show the banner again for this message
+    localStorage.setItem('ocean_tg_msg_id', _pendingTgData.msgId.toString());
+    _pendingTgData = null;
+  }
+  setTgBar('✅', 'TG актуален', '#a5d6a7', false);
+  updateSyncStatus('✅ Актуально');
 }
 
 function updateSyncStatus(text) {
