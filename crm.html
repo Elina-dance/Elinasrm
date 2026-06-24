@@ -3888,7 +3888,7 @@ async function tgSave() {
 
 // Загрузка из Telegram
 let _lastTgLoadTime = 0;
-async function tgLoad() {
+async function tgLoad(force = false) {
   _lastTgLoadTime = Date.now();
   try {
     setTgBar('🔄', 'Проверяю TG...', '#ffd54f', false);
@@ -3921,22 +3921,24 @@ async function tgLoad() {
 
       // Migration: first run of new code on a device that already has data.
       // Set baseline so we only load files that arrive AFTER this moment.
+      // Skip this check when force=true (manual sync — user explicitly wants to load).
       const hasExistingData = parseInt(localStorage.getItem('ocean_last_save') || '0') > 0;
-      if (sentMsgId === 0 && lastMsgId === 0 && hasExistingData) {
+      if (!force && sentMsgId === 0 && lastMsgId === 0 && hasExistingData) {
         localStorage.setItem('ocean_tg_msg_id', latestMsgId.toString());
         setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
         updateSyncStatus('✅ Актуально');
         return false;
       }
 
-      // Skip if the latest TG file is one we uploaded ourselves (no data from another device)
-      if (sentMsgId > 0 && latestMsgId <= sentMsgId) {
+      // Skip if the latest TG file is one we uploaded ourselves (no data from another device).
+      // Skip this check when force=true (manual sync always shows TG data).
+      if (!force && sentMsgId > 0 && latestMsgId <= sentMsgId) {
         setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
         updateSyncStatus('✅ Актуально');
         return false;
       }
 
-      if (latestMsgId > lastMsgId) {
+      if (force || latestMsgId > lastMsgId) {
         const hasLocalData = !!localStorage.getItem('ocean_crm_v3');
         if (!hasLocalData) {
           // Fresh device — auto-load, nothing to lose
@@ -4170,7 +4172,7 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
-  const result = await tgLoad();
+  const result = await tgLoad(true);
   if (result === false && !_pendingTgData) {
     showToast('✅ Данные актуальны — обновлений нет');
   }
