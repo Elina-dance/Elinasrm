@@ -182,6 +182,8 @@
   .save-banner { position: fixed; top: 0; left: 0; right: 0; background: #2e7d32; color: white; text-align: center; padding: 10px; font-size: 13px; font-weight: 700; z-index: 999; transform: translateY(-100%); transition: transform 0.3s ease; }
   .save-banner.show { transform: translateY(0); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ocean); color: white; padding: 12px 20px; border-radius: 14px; font-size: 14px; font-weight: 600; z-index: 999; display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.25); text-align: center; max-width: 90vw; }
+  @keyframes laterPulse { 0%,100%{box-shadow:0 0 0 0 rgba(124,77,255,0.5)} 50%{box-shadow:0 0 0 8px rgba(124,77,255,0)} }
+  .later-pulse { animation: laterPulse 0.7s ease 2; }
 </style>
 </head>
 <body>
@@ -2251,7 +2253,13 @@ function selectStatus(s) {
   if (s === 'later') {
     laterHelper.style.display = 'block';
     if (!document.getElementById('later-quick-edit').value) setLaterQuickEdit(30);
-    setTimeout(() => laterHelper.scrollIntoView({behavior:'smooth', block:'nearest'}), 50);
+    setTimeout(() => {
+      const modal = document.querySelector('#edit-modal .modal');
+      if (modal) modal.scrollTop = laterHelper.offsetTop - 80;
+      laterHelper.classList.remove('later-pulse');
+      void laterHelper.offsetWidth;
+      laterHelper.classList.add('later-pulse');
+    }, 60);
   } else {
     laterHelper.style.display = 'none';
   }
