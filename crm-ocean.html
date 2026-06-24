@@ -3816,6 +3816,13 @@ async function retrySyncNow() {
   await tgSave();
 }
 
+// Вспомогательная функция с таймаутом
+function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 // Сохранение в Telegram как файл
 async function tgSave() {
   try {
@@ -3831,7 +3838,7 @@ async function tgSave() {
     formData.append('chat_id', TG_CHAT_ID);
     formData.append('document', blob, 'crm-data.json');
     formData.append('caption', '💾 CRM sync ' + new Date().toLocaleString('ru-RU'));
-    const resp = await fetch(`${TG_API}/sendDocument`, { method: 'POST', body: formData });
+    const resp = await fetchWithTimeout(`${TG_API}/sendDocument`, { method: 'POST', body: formData }, 10000);
     const result = await resp.json();
     lastSyncTime = Date.now();
     if (result.ok) {
@@ -3844,7 +3851,8 @@ async function tgSave() {
     }
   } catch(e) {
     console.log('TG save error:', e);
-    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80', true);
+    const msg = e.name === 'AbortError' ? 'TG не отвечает (таймаут)' : 'Нет связи с TG';
+    setTgBar('⚠️', msg, '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
 }
@@ -3854,7 +3862,7 @@ async function tgLoad() {
   try {
     setTgBar('🔄', 'Проверяю TG...', '#ffd54f', false);
     updateSyncStatus('🔄 Загрузка...');
-    const res = await fetch(`${TG_API}/getUpdates?limit=50&offset=-50`);
+    const res = await fetchWithTimeout(`${TG_API}/getUpdates?limit=50&offset=-50`, {}, 8000);
     const json = await res.json();
     if (!json.ok) { setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка TG'); return false; }
 
@@ -3866,12 +3874,12 @@ async function tgLoad() {
     if (!docs.length) { setTgBar('📭', 'Нет данных в TG', '#ffd54f', false); updateSyncStatus('📭 Нет данных в TG'); return false; }
 
     const fileId = docs[0].message.document.file_id;
-    const fileRes = await fetch(`${TG_API}/getFile?file_id=${fileId}`);
+    const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
     const fileJson = await fileRes.json();
     if (!fileJson.ok) { setTgBar('⚠️', 'Ошибка файла', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка файла'); return false; }
 
     const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
-    const dataRes = await fetch(fileUrl);
+    const dataRes = await fetchWithTimeout(fileUrl, {}, 8000);
     const data = await dataRes.json();
 
     if (data.clients && data.clients.length > 0) {
@@ -3898,7 +3906,8 @@ async function tgLoad() {
     }
   } catch(e) {
     console.log('TG load error:', e);
-    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80', true);
+    const msg = e.name === 'AbortError' ? 'TG не отвечает (таймаут)' : 'Нет связи с TG';
+    setTgBar('⚠️', msg, '#ff8a80', true);
     updateSyncStatus('⚠️ Ошибка загрузки');
     return false;
   }
