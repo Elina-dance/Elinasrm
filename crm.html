@@ -215,6 +215,7 @@
 <button class="btn-add" onclick="importNewClients()" style="background:#7c4dff;">⬇️ Новые</button>
     <button class="btn-add" onclick="openImportModal()" style="background:#00897b;" title="Импортировать карточки из текста или JSON">📥 Импорт</button>
     <button class="btn-add" onclick="findDuplicates()" style="background:#ff6d00;" title="Найти дубли по номеру">🔗 Дубли</button>
+    <button class="btn-add" onclick="manualTgLoad()" style="background:#1565c0;" title="Загрузить данные с другого устройства из Telegram">📲 Синк</button>
     <button class="btn-add" onclick="openAddModal()">+ Клиент</button>
   </div>
   <div class="search-bar">
@@ -4160,6 +4161,13 @@ function importNewClients() {
   showToast(`✅ Добавлено ${toAdd.length} новых контактов!`);
 }
 
+async function manualTgLoad() {
+  const result = await tgLoad();
+  if (result === false && !_pendingTgData) {
+    showToast('✅ Данные актуальны — обновлений нет');
+  }
+}
+
 // ============ INIT ============
 window.onerror = function(msg, src, line, col, err) {
   showToast('⚠️ Ошибка: ' + msg + ' (строка ' + line + ')');
@@ -4168,14 +4176,9 @@ window.onerror = function(msg, src, line, col, err) {
 load();
 updateExportBadge();
 render();
-// Автосинхронизация с TG при открытии
-setTimeout(() => tgLoad(), 2000);
-// Re-check TG when phone wakes up / user returns to tab (iOS suspends background tabs)
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && Date.now() - _lastTgLoadTime > 30000) {
-    tgLoad();
-  }
-});
+// TG upload on save is automatic (via scheduleTgSave).
+// TG download is MANUAL ONLY — user presses the sync button.
+// This prevents TG from ever overwriting local changes automatically.
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
