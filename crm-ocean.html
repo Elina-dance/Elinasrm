@@ -3850,6 +3850,11 @@ async function tgSave() {
     const result = await resp.json();
     lastSyncTime = Date.now();
     if (result.ok) {
+      // Store the Telegram message_id of what we just uploaded.
+      // tgLoad uses this to skip re-loading our own data.
+      if (result.result?.message_id) {
+        localStorage.setItem('ocean_tg_sent_msg_id', result.result.message_id.toString());
+      }
       const t = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
       setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7', false);
       updateSyncStatus('✅ ' + t);
@@ -3893,11 +3898,27 @@ async function tgLoad() {
     const data = await dataRes.json();
 
     if (data.clients && data.clients.length > 0) {
-      // Use Telegram message_id as version — it's a monotonically increasing integer
-      // assigned by Telegram, so it's immune to clock skew between devices.
       const latestMsgId = docs[0].message.message_id;
       const lastMsgId = parseInt(localStorage.getItem('ocean_tg_msg_id') || '0');
+      const sentMsgId = parseInt(localStorage.getItem('ocean_tg_sent_msg_id') || '0');
       const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+
+      // Migration: first run of new code on a device that already has data.
+      // Set baseline so we only load files that arrive AFTER this moment.
+      const hasExistingData = parseInt(localStorage.getItem('ocean_last_save') || '0') > 0;
+      if (sentMsgId === 0 && lastMsgId === 0 && hasExistingData) {
+        localStorage.setItem('ocean_tg_msg_id', latestMsgId.toString());
+        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
+        updateSyncStatus('✅ Актуально');
+        return false;
+      }
+
+      // Skip if the latest TG file is one we uploaded ourselves (no data from another device)
+      if (sentMsgId > 0 && latestMsgId <= sentMsgId) {
+        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
+        updateSyncStatus('✅ Актуально');
+        return false;
+      }
 
       if (latestMsgId > lastMsgId) {
         clients = data.clients;
