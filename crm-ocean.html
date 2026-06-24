@@ -199,6 +199,7 @@
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
+        <button id="retry-sync-btn" onclick="retrySyncNow()" style="display:none;background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;cursor:pointer;">↩️ Повторить</button>
       </div>
     </div>
     <button class="btn-export" onclick="openExportModal()" id="export-btn">📤 Экспорт</button>
@@ -3802,17 +3803,23 @@ const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
 let tgSyncTimer = null;
 let lastSyncTime = 0;
 
-function setTgBar(icon, text, color) {
+function setTgBar(icon, text, color, showRetry) {
   const iconEl = document.getElementById('tg-sync-icon');
   const textEl = document.getElementById('tg-sync-text');
+  const retryBtn = document.getElementById('retry-sync-btn');
   if (iconEl) iconEl.textContent = icon;
   if (textEl) { textEl.textContent = text; textEl.style.color = color; }
+  if (retryBtn) retryBtn.style.display = showRetry ? 'inline-block' : 'none';
+}
+async function retrySyncNow() {
+  showToast('🔄 Повторная отправка...');
+  await tgSave();
 }
 
 // Сохранение в Telegram как файл
 async function tgSave() {
   try {
-    setTgBar('📤', 'Отправка в TG...', '#ffd54f');
+    setTgBar('📤', 'Отправка в TG...', '#ffd54f', false);
     const data = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
@@ -3829,15 +3836,15 @@ async function tgSave() {
     lastSyncTime = Date.now();
     if (result.ok) {
       const t = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-      setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7');
+      setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7', false);
       updateSyncStatus('✅ ' + t);
     } else {
-      setTgBar('⚠️', 'Ошибка TG: ' + (result.description||''), '#ff8a80');
+      setTgBar('⚠️', 'Ошибка TG: ' + (result.description||''), '#ff8a80', true);
       updateSyncStatus('⚠️ Ошибка');
     }
   } catch(e) {
     console.log('TG save error:', e);
-    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80');
+    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
 }
@@ -3845,23 +3852,23 @@ async function tgSave() {
 // Загрузка из Telegram
 async function tgLoad() {
   try {
-    setTgBar('🔄', 'Проверяю TG...', '#ffd54f');
+    setTgBar('🔄', 'Проверяю TG...', '#ffd54f', false);
     updateSyncStatus('🔄 Загрузка...');
     const res = await fetch(`${TG_API}/getUpdates?limit=50&offset=-50`);
     const json = await res.json();
-    if (!json.ok) { setTgBar('⚠️', 'Ошибка TG', '#ff8a80'); updateSyncStatus('⚠️ Ошибка TG'); return false; }
+    if (!json.ok) { setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка TG'); return false; }
 
     // Ищем последний документ с нашими данными
     const docs = json.result
       .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
       .sort((a,b) => b.message.date - a.message.date);
 
-    if (!docs.length) { setTgBar('📭', 'Нет данных в TG', '#ffd54f'); updateSyncStatus('📭 Нет данных в TG'); return false; }
+    if (!docs.length) { setTgBar('📭', 'Нет данных в TG', '#ffd54f', false); updateSyncStatus('📭 Нет данных в TG'); return false; }
 
     const fileId = docs[0].message.document.file_id;
     const fileRes = await fetch(`${TG_API}/getFile?file_id=${fileId}`);
     const fileJson = await fileRes.json();
-    if (!fileJson.ok) { setTgBar('⚠️', 'Ошибка файла', '#ff8a80'); updateSyncStatus('⚠️ Ошибка файла'); return false; }
+    if (!fileJson.ok) { setTgBar('⚠️', 'Ошибка файла', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка файла'); return false; }
 
     const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
     const dataRes = await fetch(fileUrl);
@@ -3879,19 +3886,19 @@ async function tgLoad() {
         save();
         renderTabs();
         renderCurrentTab();
-        setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7');
+        setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7', false);
         updateSyncStatus('✅ Загружено из TG ' + tgTimeStr);
         showToast('✅ Данные загружены с другого устройства!');
         return true;
       } else {
-        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7');
+        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
         updateSyncStatus('✅ Актуально');
         return false;
       }
     }
   } catch(e) {
     console.log('TG load error:', e);
-    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80');
+    setTgBar('⚠️', 'Нет связи с TG', '#ff8a80', true);
     updateSyncStatus('⚠️ Ошибка загрузки');
     return false;
   }
