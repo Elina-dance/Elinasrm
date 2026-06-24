@@ -4176,6 +4176,7 @@ window.onerror = function(msg, src, line, col, err) {
 // Show localStorage debug info in header
 (function() {
   const raw = localStorage.getItem('ocean_crm_v3');
+  const ts = localStorage.getItem('ocean_last_save');
   const el = document.getElementById('ls-debug');
   if (el) {
     if (!raw) {
@@ -4183,7 +4184,8 @@ window.onerror = function(msg, src, line, col, err) {
     } else {
       try {
         const arr = JSON.parse(raw);
-        el.textContent = '[LS: ' + arr.length + ' кл]';
+        const timeStr = ts ? new Date(parseInt(ts)).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '?';
+        el.textContent = '[LS: ' + arr.length + ' кл · ' + timeStr + ']';
       } catch(e) {
         el.textContent = '[LS: ошибка JSON]';
       }
