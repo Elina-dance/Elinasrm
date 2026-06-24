@@ -3898,9 +3898,14 @@ async function tgLoad() {
       // Using ocean_last_save caused a bug: tgLoad called save(), bumping ocean_last_save
       // to phone's current time (slightly after remoteTime), so next check always skipped.
       const lastTgAt = parseInt(localStorage.getItem('ocean_tg_loaded_at') || '0');
+      const lastLocalSave = parseInt(localStorage.getItem('ocean_last_save') || '0');
+      // Baseline: max of (last TG file we loaded) and (last local save).
+      // This protects local edits: if user saved locally after last TG load,
+      // only load TG if TG file is newer than that local save too.
+      const baseline = Math.max(lastTgAt, lastLocalSave);
       const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 
-      if (remoteTime > lastTgAt) {
+      if (remoteTime > baseline) {
         clients = data.clients;
         if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
         // Write directly to localStorage — do NOT call save(), which would call scheduleTgSave()
