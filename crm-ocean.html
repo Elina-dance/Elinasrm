@@ -3866,7 +3866,9 @@ async function tgSave() {
 }
 
 // Загрузка из Telegram
+let _lastTgLoadTime = 0;
 async function tgLoad() {
+  _lastTgLoadTime = Date.now();
   try {
     setTgBar('🔄', 'Проверяю TG...', '#ffd54f', false);
     updateSyncStatus('🔄 Загрузка...');
@@ -3891,15 +3893,20 @@ async function tgLoad() {
     const data = await dataRes.json();
 
     if (data.clients && data.clients.length > 0) {
-      // Сравниваем время — берём свежее
       const remoteTime = new Date(data.savedAt).getTime();
-      const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+      // Compare against savedAt of last TG file we loaded — not against phone's local clock.
+      // Using ocean_last_save caused a bug: tgLoad called save(), bumping ocean_last_save
+      // to phone's current time (slightly after remoteTime), so next check always skipped.
+      const lastTgAt = parseInt(localStorage.getItem('ocean_tg_loaded_at') || '0');
       const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 
-      if (remoteTime > localTime) {
+      if (remoteTime > lastTgAt) {
         clients = data.clients;
         if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
-        save();
+        // Write directly to localStorage — do NOT call save(), which would call scheduleTgSave()
+        // and cause the phone to re-upload stale data with a fresh timestamp.
+        localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+        localStorage.setItem('ocean_tg_loaded_at', remoteTime.toString());
         renderTabs();
         renderCurrentTab();
         setTgBar('📥', 'Загружено из TG в ' + tgTimeStr, '#a5d6a7', false);
@@ -4096,6 +4103,12 @@ updateExportBadge();
 render();
 // Автосинхронизация с TG при открытии
 setTimeout(() => tgLoad(), 2000);
+// Re-check TG when phone wakes up / user returns to tab (iOS suspends background tabs)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - _lastTgLoadTime > 30000) {
+    tgLoad();
+  }
+});
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
