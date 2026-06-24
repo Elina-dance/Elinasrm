@@ -1077,13 +1077,7 @@ function load() {
     const saved = localStorage.getItem('ocean_crm_v3');
     if (saved) {
       clients = JSON.parse(saved);
-      const existingIds = new Set(clients.map(c => c.id));
-      const newOnes = INITIAL_DATA.filter(c => !existingIds.has(c.id));
-      if (newOnes.length > 0) {
-        clients.push(...newOnes);
-        save();
-        setTimeout(() => showToast('✅ Добавлено ' + newOnes.length + ' новых контактов!'), 500);
-      }
+      // Do NOT auto-merge INITIAL_DATA — deleted/merged clients would come back on every reload
     } else {
       clients = JSON.parse(JSON.stringify(INITIAL_DATA));
       save();
