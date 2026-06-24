@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v6</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v7</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -4172,9 +4172,46 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
-  const result = await tgLoad(true);
-  if (result === false && !_pendingTgData) {
-    showToast('✅ Данные актуальны — обновлений нет');
+  showToast('🔄 Подключаюсь к Telegram...');
+  setTgBar('🔄', 'Загружаю из TG...', '#ffd54f', false);
+  try {
+    const res = await fetchWithTimeout(`${TG_API}/getUpdates?limit=100&offset=-100`, {}, 10000);
+    const json = await res.json();
+    if (!json.ok) {
+      showToast('❌ Ошибка TG: ' + (json.description || 'нет ответа'));
+      setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true);
+      return;
+    }
+    const allUpdates = json.result || [];
+    const docs = allUpdates
+      .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
+      .sort((a, b) => b.message.date - a.message.date);
+    if (!docs.length) {
+      showToast('📭 CRM-файлы не найдены в TG (проверено ' + allUpdates.length + ' сообщений)');
+      setTgBar('📭', 'Нет данных в TG', '#ffd54f', false);
+      return;
+    }
+    const fileId = docs[0].message.document.file_id;
+    const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
+    const fileJson = await fileRes.json();
+    if (!fileJson.ok) { showToast('❌ Ошибка скачивания файла из TG'); return; }
+    const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
+    const dataRes = await fetchWithTimeout(fileUrl, {}, 8000);
+    const data = await dataRes.json();
+    if (!data.clients?.length) { showToast('❌ Файл в TG пустой'); return; }
+    const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    _pendingTgData = { data, msgId: docs[0].message.message_id, timeStr: tgTimeStr };
+    const banner = document.getElementById('tg-update-banner');
+    if (banner) {
+      document.getElementById('tg-update-text').textContent =
+        '📥 Данные из TG · ' + tgTimeStr + ' · ' + data.clients.length + ' клиентов';
+      banner.style.display = 'flex';
+    }
+    setTgBar('📥', 'Готово к загрузке · ' + tgTimeStr, '#64b5f6', false);
+  } catch (e) {
+    const msg = e.name === 'AbortError' ? '⚠️ Таймаут — VPN включён?' : '⚠️ Ошибка: ' + e.message;
+    showToast(msg);
+    setTgBar('⚠️', 'Ошибка соединения', '#ff8a80', true);
   }
 }
 
