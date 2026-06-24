@@ -3859,7 +3859,7 @@ async function tgSave() {
     }
   } catch(e) {
     console.log('TG save error:', e);
-    const msg = e.name === 'AbortError' ? 'TG не отвечает (таймаут)' : 'Нет связи с TG';
+    const msg = e.name === 'AbortError' ? 'TG таймаут — включи VPN' : 'Нет связи с TG — нужен VPN';
     setTgBar('⚠️', msg, '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
@@ -3914,7 +3914,7 @@ async function tgLoad() {
     }
   } catch(e) {
     console.log('TG load error:', e);
-    const msg = e.name === 'AbortError' ? 'TG не отвечает (таймаут)' : 'Нет связи с TG';
+    const msg = e.name === 'AbortError' ? 'TG таймаут — включи VPN' : 'Нет связи с TG — нужен VPN';
     setTgBar('⚠️', msg, '#ff8a80', true);
     updateSyncStatus('⚠️ Ошибка загрузки');
     return false;
@@ -3999,6 +3999,13 @@ function selectMergeStatus(s) {
   if (s === 'later') {
     laterHelper.style.display = 'block';
     if (!document.getElementById('later-quick-merge').value) setLaterQuickMerge(30);
+    setTimeout(() => {
+      const modal = document.querySelector('#merge-modal .modal');
+      if (modal) modal.scrollTop = laterHelper.offsetTop - 80;
+      laterHelper.classList.remove('later-pulse');
+      void laterHelper.offsetWidth;
+      laterHelper.classList.add('later-pulse');
+    }, 60);
   } else {
     laterHelper.style.display = 'none';
   }
