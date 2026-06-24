@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v8</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v9</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3866,10 +3866,17 @@ async function tgSave() {
     const result = await resp.json();
     lastSyncTime = Date.now();
     if (result.ok) {
-      // Store the Telegram message_id of what we just uploaded.
-      // tgLoad uses this to skip re-loading our own data.
       if (result.result?.message_id) {
         localStorage.setItem('ocean_tg_sent_msg_id', result.result.message_id.toString());
+      }
+      // Store file_id in bot description so any device can retrieve it via getMyDescription
+      const fileId = result.result?.document?.file_id;
+      if (fileId) {
+        fetch(`${TG_API}/setMyDescription`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: 'CRMFILE:' + fileId })
+        }).catch(() => {});
       }
       const t = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
       setTgBar('✅', 'TG сохранён в ' + t, '#a5d6a7', false);
@@ -4175,36 +4182,30 @@ async function manualTgLoad() {
   showToast('🔄 Подключаюсь к Telegram...');
   setTgBar('🔄', 'Загружаю из TG...', '#ffd54f', false);
   try {
-    const res = await fetchWithTimeout(`${TG_API}/getUpdates?limit=100&offset=-100`, {}, 10000);
-    const json = await res.json();
-    if (!json.ok) {
-      showToast('❌ Ошибка TG: ' + (json.description || 'нет ответа'));
+    // Read file_id stored in bot description by tgSave on another device
+    const descRes = await fetchWithTimeout(`${TG_API}/getMyDescription`, {}, 8000);
+    const descData = await descRes.json();
+    if (!descData.ok) {
+      showToast('❌ Ошибка TG: ' + (descData.description || 'нет ответа'));
       setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true);
       return;
     }
-    const allUpdates = json.result || [];
-    const docs = allUpdates
-      .filter(u => {
-        const msg = u.message || u.channel_post;
-        return msg?.document && msg?.caption?.includes('CRM sync');
-      })
-      .map(u => u.message || u.channel_post)
-      .sort((a, b) => b.date - a.date);
-    if (!docs.length) {
-      showToast('📭 CRM-файлы не найдены в TG (проверено ' + allUpdates.length + ' сообщений)');
+    const desc = descData.result?.description || '';
+    if (!desc.startsWith('CRMFILE:')) {
+      showToast('📭 Нет данных для синка. Сначала сохрани на Маке.');
       setTgBar('📭', 'Нет данных в TG', '#ffd54f', false);
       return;
     }
-    const fileId = docs[0].document.file_id;
+    const fileId = desc.replace('CRMFILE:', '').trim();
     const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
     const fileJson = await fileRes.json();
-    if (!fileJson.ok) { showToast('❌ Ошибка скачивания файла из TG'); return; }
+    if (!fileJson.ok) { showToast('❌ Ошибка получения файла из TG'); setTgBar('⚠️', 'Ошибка файла', '#ff8a80', true); return; }
     const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
     const dataRes = await fetchWithTimeout(fileUrl, {}, 8000);
     const data = await dataRes.json();
     if (!data.clients?.length) { showToast('❌ Файл в TG пустой'); return; }
     const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    _pendingTgData = { data, msgId: docs[0].message_id, timeStr: tgTimeStr };
+    _pendingTgData = { data, msgId: 0, timeStr: tgTimeStr };
     const banner = document.getElementById('tg-update-banner');
     if (banner) {
       document.getElementById('tg-update-text').textContent =
