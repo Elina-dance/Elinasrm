@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v11</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v12</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -4192,33 +4192,44 @@ function importNewClients() {
 
 async function manualTgLoad() {
   showToast('🔄 Загружаю из GitHub...');
-  setTgBar('🔄', 'Загружаю из GitHub...', '#ffd54f', false);
+  setTgBar('🔄', 'Загружаю...', '#ffd54f', false);
   try {
-    // Читаем напрямую из публичного репозитория — работает без токена и без VPN
-    const url = GH_RAW + '?t=' + Date.now();
-    const res = await fetchWithTimeout(url, {}, 12000);
+    // GitHub Contents API — надёжнее raw CDN, обходит кэш, работает без VPN
+    const apiUrl = 'https://api.github.com/repos/' + GH_REPO + '/contents/' + GH_FILE + '?t=' + Date.now();
+    const res = await fetchWithTimeout(apiUrl, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    }, 14000);
+    if (res.status === 404) {
+      showToast('📭 Нет данных. Сначала сохрани на Маке.');
+      setTgBar('📭', 'Нет данных', '#ffd54f', false);
+      return;
+    }
     if (!res.ok) {
       showToast('❌ GitHub: ' + res.status);
       setTgBar('⚠️', 'Ошибка GitHub ' + res.status, '#ff8a80', true);
       return;
     }
-    const data = await res.json();
+    const fileInfo = await res.json();
+    // Декодируем base64 → UTF-8
+    const rawBytes = atob(fileInfo.content.replace(/\n/g, ''));
+    const decoded = decodeURIComponent(escape(rawBytes));
+    const data = JSON.parse(decoded);
     if (!data.clients?.length) {
       showToast('📭 Нет данных. Сначала сохрани на Маке.');
       setTgBar('📭', 'Нет данных', '#ffd54f', false);
       return;
     }
-    const timeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    // Применяем сразу — Синк нажимается осознанно, подтверждение лишнее
+    const savedDate = new Date(data.savedAt);
+    const dateStr = savedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     clients = data.clients;
     if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
     renderTabs();
     renderCurrentTab();
-    const t = timeStr + ' · ' + data.clients.length + ' кл.';
-    setTgBar('✅', 'Загружено с Мака · ' + t, '#a5d6a7', false);
+    setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + data.clients.length + ' кл.', '#a5d6a7', false);
     updateSyncStatus('✅ Синк ' + timeStr);
-    showToast('✅ Загружено с Мака · ' + data.clients.length + ' клиентов');
+    showToast('✅ ' + data.clients.length + ' клиентов · сохранено ' + dateStr + ' в ' + timeStr);
   } catch(e) {
     const msg = e.name === 'AbortError' ? '⚠️ Таймаут соединения' : '⚠️ Ошибка: ' + e.message;
     showToast(msg);
@@ -4253,9 +4264,13 @@ window.onerror = function(msg, src, line, col, err) {
 load();
 updateExportBadge();
 render();
-// TG upload on save is automatic (via scheduleTgSave).
-// TG download is MANUAL ONLY — user presses the sync button.
-// This prevents TG from ever overwriting local changes automatically.
+// На Маке: автосохранение в GitHub при каждом открытии CRM (через 8 сек),
+// чтобы телефон всегда мог получить актуальные данные.
+// На телефоне (iPhone/iPad): не сохраняем автоматически — только читаем.
+const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (!_isPhone) {
+  setTimeout(() => ghSave(), 8000);
+}
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
