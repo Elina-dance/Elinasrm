@@ -4137,7 +4137,8 @@ setTimeout(async () => {
       const cloud = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));
       const cloudTime = new Date(cloud.savedAt).getTime();
       const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
-      if (cloudTime > localTime && cloud.clients?.length > 0) {
+      // Телефон всегда загружает из облака; Мак — только если облако новее
+      if (cloud.clients?.length > 0 && (_isPhone || cloudTime > localTime)) {
         clients = cloud.clients;
         if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
         localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
