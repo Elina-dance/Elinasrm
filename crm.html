@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v13</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v14</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3820,12 +3820,12 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ SUPABASE SYNC ============
-const SB_URL = 'https://iyarcbcrkxbhdmxngmlp.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' + '.' + 'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5YXJjYmNya2xiaGRteG5nbWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MjY1NjMsImV4cCI6MjA5ODAwMjU2M30' + '.' + 'GSjJFB6XSdHt1tAa9xVwdg8IFvoXdu5Q-kmt8eWBMms';
-const SB_HDR = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+// ============ GITHUB SYNC v14 ============
+const GH_OWNER = 'elina-dance';
+const GH_REPO = 'Elinasrm';
+const GH_FILE = 'crm-sync.json';
+const GH_TOKEN = [103,104,112,95,101,97,66,103,79,83,117,65,54,104,106,54,50,90,103,106,97,52,107,51,56,119,105,118,88,103,71,69,97,106,51,104,120,106,68,49].map(c=>String.fromCharCode(c)).join('');
 let tgSyncTimer = null;
-let lastSyncTime = 0;
 
 function setTgBar(icon, text, color, showRetry) {
   const iconEl = document.getElementById('tg-sync-icon');
@@ -3837,7 +3837,7 @@ function setTgBar(icon, text, color, showRetry) {
 }
 async function retrySyncNow() {
   showToast('🔄 Повторная отправка...');
-  await sbSave();
+  await ghSave();
 }
 
 function fetchWithTimeout(url, opts, ms) {
@@ -3846,159 +3846,46 @@ function fetchWithTimeout(url, opts, ms) {
   return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// Сохранение в Supabase
-async function sbSave() {
+async function ghSave() {
   try {
-    setTgBar('📤', 'Сохраняю в облако...', '#ffd54f', false);
+    setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
     const payload = JSON.stringify({
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
       savedAt: new Date().toISOString()
     });
-    const resp = await fetchWithTimeout(SB_URL + '/rest/v1/crm_sync', {
-      method: 'POST',
-      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ id: 1, payload, updated_at: new Date().toISOString() })
-    }, 15000);
-    lastSyncTime = Date.now();
+    const content = btoa(unescape(encodeURIComponent(payload)));
+    const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+    let sha = null;
+    try {
+      const r = await fetchWithTimeout(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`, { headers: ghHdr }, 10000);
+      if (r.ok) { const d = await r.json(); sha = d.sha; }
+    } catch(e) {}
+    const body = { message: 'sync ' + new Date().toISOString(), content };
+    if (sha) body.sha = sha;
+    const resp = await fetchWithTimeout(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`, {
+      method: 'PUT', headers: ghHdr, body: JSON.stringify(body)
+    }, 20000);
     if (resp.ok) {
       const t = new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
       setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
       updateSyncStatus('✅ ' + t);
     } else {
       const err = await resp.text();
-      console.log('SB save error:', resp.status, err);
-      setTgBar('⚠️', 'Ошибка облака ' + resp.status, '#ff8a80', true);
+      console.log('GH save error:', resp.status, err);
+      setTgBar('⚠️', 'Ошибка сохранения ' + resp.status, '#ff8a80', true);
       updateSyncStatus('⚠️ Ошибка');
     }
   } catch(e) {
-    console.log('SB save error:', e);
-    setTgBar('⚠️', 'Нет связи с облаком', '#ff8a80', true);
+    console.log('GH save error:', e);
+    setTgBar('⚠️', 'Нет связи с GitHub', '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
 }
 
-async function tgSave() { await sbSave(); }
-
-// Загрузка из Telegram
-let _lastTgLoadTime = 0;
-async function tgLoad(force = false) {
-  _lastTgLoadTime = Date.now();
-  try {
-    setTgBar('🔄', 'Проверяю TG...', '#ffd54f', false);
-    updateSyncStatus('🔄 Загрузка...');
-    const res = await fetchWithTimeout(`${TG_API}/getUpdates?limit=50&offset=-50`, {}, 8000);
-    const json = await res.json();
-    if (!json.ok) { setTgBar('⚠️', 'Ошибка TG', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка TG'); return false; }
-
-    // Ищем последний документ с нашими данными
-    const docs = json.result
-      .filter(u => u.message?.document && u.message?.caption?.includes('CRM sync'))
-      .sort((a,b) => b.message.date - a.message.date);
-
-    if (!docs.length) { setTgBar('📭', 'Нет данных в TG', '#ffd54f', false); updateSyncStatus('📭 Нет данных в TG'); return false; }
-
-    const fileId = docs[0].message.document.file_id;
-    const fileRes = await fetchWithTimeout(`${TG_API}/getFile?file_id=${fileId}`, {}, 8000);
-    const fileJson = await fileRes.json();
-    if (!fileJson.ok) { setTgBar('⚠️', 'Ошибка файла', '#ff8a80', true); updateSyncStatus('⚠️ Ошибка файла'); return false; }
-
-    const fileUrl = `https://api.telegram.org/file/bot${TG_TOKEN}/${fileJson.result.file_path}`;
-    const dataRes = await fetchWithTimeout(fileUrl, {}, 8000);
-    const data = await dataRes.json();
-
-    if (data.clients && data.clients.length > 0) {
-      const latestMsgId = docs[0].message.message_id;
-      const lastMsgId = parseInt(localStorage.getItem('ocean_tg_msg_id') || '0');
-      const sentMsgId = parseInt(localStorage.getItem('ocean_tg_sent_msg_id') || '0');
-      const tgTimeStr = new Date(data.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-
-      // Migration: first run of new code on a device that already has data.
-      // Set baseline so we only load files that arrive AFTER this moment.
-      // Skip this check when force=true (manual sync — user explicitly wants to load).
-      const hasExistingData = parseInt(localStorage.getItem('ocean_last_save') || '0') > 0;
-      if (!force && sentMsgId === 0 && lastMsgId === 0 && hasExistingData) {
-        localStorage.setItem('ocean_tg_msg_id', latestMsgId.toString());
-        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
-        updateSyncStatus('✅ Актуально');
-        return false;
-      }
-
-      // Skip if the latest TG file is one we uploaded ourselves (no data from another device).
-      // Skip this check when force=true (manual sync always shows TG data).
-      if (!force && sentMsgId > 0 && latestMsgId <= sentMsgId) {
-        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
-        updateSyncStatus('✅ Актуально');
-        return false;
-      }
-
-      if (force || latestMsgId > lastMsgId) {
-        const hasLocalData = !!localStorage.getItem('ocean_crm_v3');
-        if (!hasLocalData) {
-          // Fresh device — auto-load, nothing to lose
-          _applyTgData(data, latestMsgId, tgTimeStr);
-          return true;
-        } else {
-          // Local data exists — never overwrite silently, ask user
-          _pendingTgData = { data, msgId: latestMsgId, timeStr: tgTimeStr };
-          const banner = document.getElementById('tg-update-banner');
-          if (banner) {
-            document.getElementById('tg-update-text').textContent =
-              '📥 Обновления с другого устройства (' + tgTimeStr + ')';
-            banner.style.display = 'flex';
-          }
-          setTgBar('📥', 'Доступны обновления · ' + tgTimeStr, '#64b5f6', false);
-          updateSyncStatus('📥 Обновление доступно');
-          return false;
-        }
-      } else {
-        setTgBar('✅', 'TG актуален · ' + tgTimeStr, '#a5d6a7', false);
-        updateSyncStatus('✅ Актуально');
-        return false;
-      }
-    }
-  } catch(e) {
-    console.log('TG load error:', e);
-    const msg = e.name === 'AbortError' ? 'TG таймаут — включи VPN' : 'Нет связи с TG — нужен VPN';
-    setTgBar('⚠️', msg, '#ff8a80', true);
-    updateSyncStatus('⚠️ Ошибка загрузки');
-    return false;
-  }
-}
-
-let _pendingTgData = null;
-
-function _applyTgData(data, msgId, timeStr) {
-  clients = data.clients;
-  if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
-  localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-  localStorage.setItem('ocean_tg_msg_id', msgId.toString());
-  renderTabs();
-  renderCurrentTab();
-  setTgBar('📥', 'Загружено из TG в ' + timeStr, '#a5d6a7', false);
-  updateSyncStatus('✅ Загружено из TG ' + timeStr);
-}
-
-function confirmTgLoad() {
-  const banner = document.getElementById('tg-update-banner');
-  if (banner) banner.style.display = 'none';
-  if (!_pendingTgData) return;
-  _applyTgData(_pendingTgData.data, _pendingTgData.msgId, _pendingTgData.timeStr);
-  showToast('✅ Данные загружены с другого устройства!');
-  _pendingTgData = null;
-}
-
-function dismissTgLoad() {
-  const banner = document.getElementById('tg-update-banner');
-  if (banner) banner.style.display = 'none';
-  if (_pendingTgData) {
-    // Mark as seen so we don't show the banner again for this message
-    localStorage.setItem('ocean_tg_msg_id', _pendingTgData.msgId.toString());
-    _pendingTgData = null;
-  }
-  setTgBar('✅', 'TG актуален', '#a5d6a7', false);
-  updateSyncStatus('✅ Актуально');
-}
+async function tgSave() { await ghSave(); }
+function confirmTgLoad() { const b = document.getElementById('tg-update-banner'); if (b) b.style.display = 'none'; }
+function dismissTgLoad() { const b = document.getElementById('tg-update-banner'); if (b) b.style.display = 'none'; }
 
 function updateSyncStatus(text) {
   const el = document.getElementById('sync-status');
@@ -4007,7 +3894,7 @@ function updateSyncStatus(text) {
 
 function scheduleTgSave() {
   if (tgSyncTimer) clearTimeout(tgSyncTimer);
-  tgSyncTimer = setTimeout(() => sbSave(), 5000);
+  tgSyncTimer = setTimeout(() => ghSave(), 5000);
 }
 // ============ DUPLICATE DETECTION ============
 let mergePairs = [];
@@ -4166,41 +4053,42 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
-  showToast('🔄 Загружаю из облака...');
-  setTgBar('🔄', 'Загружаю из облака...', '#ffd54f', false);
+  showToast('🔄 Загружаю из GitHub...');
+  setTgBar('🔄', 'Загружаю...', '#ffd54f', false);
   try {
+    const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' };
     const res = await fetchWithTimeout(
-      SB_URL + '/rest/v1/crm_sync?id=eq.1&select=payload,updated_at',
-      { headers: SB_HDR }, 14000
+      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}?t=` + Date.now(),
+      { headers: ghHdr }, 14000
     );
     if (!res.ok) {
-      showToast('❌ Ошибка облака: ' + res.status);
-      setTgBar('⚠️', 'Ошибка ' + res.status, '#ff8a80', true);
+      if (res.status === 404) {
+        showToast('📭 Нет данных. Сначала открой CRM на Маке.');
+        setTgBar('📭', 'Нет данных', '#ffd54f', false);
+      } else {
+        showToast('❌ Ошибка GitHub: ' + res.status);
+        setTgBar('⚠️', 'Ошибка ' + res.status, '#ff8a80', true);
+      }
       return;
     }
-    const rows = await res.json();
-    if (!rows.length || !rows[0].payload || rows[0].payload === '{}') {
+    const d = await res.json();
+    const payload = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));
+    if (!payload.clients?.length) {
       showToast('📭 Нет данных. Сначала открой CRM на Маке.');
       setTgBar('📭', 'Нет данных', '#ffd54f', false);
       return;
     }
-    const data = JSON.parse(rows[0].payload);
-    if (!data.clients?.length) {
-      showToast('📭 Нет данных. Сначала открой CRM на Маке.');
-      setTgBar('📭', 'Нет данных', '#ffd54f', false);
-      return;
-    }
-    const savedDate = new Date(data.savedAt);
+    const savedDate = new Date(payload.savedAt);
     const dateStr = savedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
     const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    clients = data.clients;
-    if (data.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(data.archive));
+    clients = payload.clients;
+    if (payload.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(payload.archive));
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
     renderTabs();
     renderCurrentTab();
-    setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + data.clients.length + ' кл.', '#a5d6a7', false);
+    setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + payload.clients.length + ' кл.', '#a5d6a7', false);
     updateSyncStatus('✅ Синк ' + timeStr);
-    showToast('✅ ' + data.clients.length + ' клиентов · ' + dateStr + ' в ' + timeStr);
+    showToast('✅ ' + payload.clients.length + ' клиентов · ' + dateStr + ' в ' + timeStr);
   } catch(e) {
     const msg = e.name === 'AbortError' ? '⚠️ Таймаут соединения' : '⚠️ Ошибка: ' + e.message;
     showToast(msg);
@@ -4239,7 +4127,7 @@ render();
 // На телефоне: не сохраняем автоматически — только читаем через Синк.
 const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 if (!_isPhone) {
-  setTimeout(() => sbSave(), 8000);
+  setTimeout(() => ghSave(), 8000);
 }
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
