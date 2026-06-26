@@ -4124,11 +4124,35 @@ window.onerror = function(msg, src, line, col, err) {
 load();
 updateExportBadge();
 render();
-// На Маке: автосохранение в Supabase при каждом открытии CRM (через 8 сек).
-// На телефоне: не сохраняем автоматически — только читаем через Синк.
 const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 if (!_isPhone) {
-  setTimeout(() => ghSave(), 8000);
+  setTimeout(async () => {
+    try {
+      const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' };
+      const r = await fetchWithTimeout(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}?t=` + Date.now(),
+        { headers: ghHdr }, 10000
+      );
+      if (r.ok) {
+        const d = await r.json();
+        const cloud = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));
+        const cloudTime = new Date(cloud.savedAt).getTime();
+        const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+        if (cloudTime > localTime && cloud.clients?.length > 0) {
+          clients = cloud.clients;
+          if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+          localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+          localStorage.setItem('ocean_last_save', cloudTime.toString());
+          renderTabs(); renderCurrentTab();
+          const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+          setTgBar('📥', 'Загружено с телефона · ' + t, '#a5d6a7', false);
+          updateSyncStatus('✅ С телефона ' + t);
+          return;
+        }
+      }
+    } catch(e) {}
+    await ghSave();
+  }, 8000);
 }
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
