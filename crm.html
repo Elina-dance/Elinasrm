@@ -3821,8 +3821,8 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
 });
 
 // ============ SUPABASE SYNC ============
-const SB_URL = 'https://mhhzbieslwzotcxhwrac.supabase.co';
-const SB_KEY = [115,98,95,112,117,98,108,105,115,104,97,98,108,101,95,67,65,111,85,109,77,115,118,76,95,122,106,71,97,107,84,118,122,77,112,115,103,95,110,68,103,104,79,111,83,98].map(c=>String.fromCharCode(c)).join('');
+const SB_URL = 'https://iyarcbcrkxbhdmxngmlp.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' + '.' + 'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5YXJjYmNya2xiaGRteG5nbWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MjY1NjMsImV4cCI6MjA5ODAwMjU2M30' + '.' + 'GSjJFB6XSdHt1tAa9xVwdg8IFvoXdu5Q-kmt8eWBMms';
 const SB_HDR = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
 let tgSyncTimer = null;
 let lastSyncTime = 0;
