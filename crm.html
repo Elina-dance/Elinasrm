@@ -4154,6 +4154,61 @@ setTimeout(async () => {
   } catch(e) {}
   if (!_isPhone) await ghSave();
 }, 8000);
+// Обзвон 23.06 — однократный импорт
+(function() {
+  if (localStorage.getItem('patch_obzvon_20260623')) return;
+  const ENTRIES = [
+    { name: 'Диана / Марьям 4 г.', phone: '89628827028', note: 'Записались, придут во вторник в 18.00', newStatus: 'trial', taskDate: '2026-06-30T18:00', taskText: 'Пробное — вторник 18:00' },
+    { name: 'Екатерина — мама Дарьи 7 л.', phone: '89190822577', note: 'Уже ходили к нам, но недавно у ребёнка была операция, нельзя физические нагрузки. Как выздоровит, напишут и придут', newStatus: 'waiting', taskDate: null, taskText: null },
+    { name: 'Аврора 4-5 л. (16 мая) — мама Лена (д/с 105)', phone: '89881441048', note: 'Вернутся в Сочи через неделю, хотят ходить. Перезвонить через неделю', newStatus: 'callback', taskDate: '2026-06-30T09:00', taskText: 'Перезвонить — вернулись в Сочи' },
+    { name: 'Маша 8 л. — мама Ирина', phone: '89619095577', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Средние' },
+    { name: 'Мия 6 л. Анна-Мария 9 л. София 18 л. — мама Вика', phone: '89384530200', note: 'Не хотят, пока не актуально', newStatus: 'declined', group: 'Средние' },
+    { name: 'Тэя 5,5 г. — мама Халида (д/с 17)', phone: '89996520993', note: 'Записались, придут в понедельник в 18.00', newStatus: 'trial', group: 'Младшие', taskDate: '2026-06-29T18:00', taskText: 'Напомнить Тэя — пробное в понедельник 18:00' },
+    { name: 'Аня 5 л. — мама Людмила', phone: '89531124672', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Младшие' },
+    { name: 'Настя 6 л. — мама Вероника', phone: '89168262902', note: 'Приедут в сентябре. Позвонить или связаться', newStatus: 'later', group: 'Средние', taskDate: '2026-09-01T09:00', taskText: 'Позвонить — приезжают в сентябре' },
+    { name: 'Алитея 3 г. — мама Катя', phone: '89000621354', note: 'Не берут трубку', newStatus: 'noanswer', group: 'Малыши' },
+    { name: 'Афина 4,4 г. — мама Мария', phone: '89048688012', note: 'Уезжают из Сочи', newStatus: 'declined', group: 'Малыши' },
+    { name: 'Ева 4-5 л. — мама Алена (д/с 44)', phone: '89384422133', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши' },
+    { name: 'Варя 5 л. — мама Наталья (д/с 81)', phone: '89184077706', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши' },
+    { name: 'Николь 4,5 г. — бабушка Неля, мама Елизавета', phone: '89189122095', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши' },
+  ];
+  function norm(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  let added = 0, updated = 0;
+  ENTRIES.forEach((e, i) => {
+    const pn = norm(e.phone);
+    const c = clients.find(x => norm(x.phone) === pn);
+    if (c) {
+      if (!c.notes.includes(e.note)) {
+        c.notes = c.notes ? c.notes + '\n23.06 — ' + e.note : e.note;
+      }
+      c.status = e.newStatus;
+      if (!c.history) c.history = [];
+      c.history.push({ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' });
+      if (e.taskDate) {
+        if (!c.tasks) c.tasks = [];
+        c.tasks.push({ id: Date.now() + i, date: e.taskDate, comment: e.taskText, done: false });
+      }
+      updated++;
+    } else {
+      clients.push({
+        id: Date.now() + i * 1000,
+        name: e.name, phone: e.phone,
+        group: e.group || 'Малыши',
+        channel: 'Обзвон 23.06',
+        trial: '2026-06-23T09:00',
+        status: e.newStatus,
+        notes: e.note, nextCall: '',
+        history: [{ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' }],
+        tasks: e.taskDate ? [{ id: Date.now() + i * 1000 + 1, date: e.taskDate, comment: e.taskText, done: false }] : []
+      });
+      added++;
+    }
+  });
+  save(); render();
+  showToast('✅ Обзвон 23.06: добавлено ' + added + ', обновлено ' + updated);
+  localStorage.setItem('patch_obzvon_20260623', '1');
+})();
+
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
