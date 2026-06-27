@@ -3894,6 +3894,8 @@ setTimeout(async () => {
   } catch(e) {}
   if (!_isPhone) await ghSave();
 }, 8000);
+// Обзвон 23.06 — однократный импорт (после автосинка)
+localStorage.removeItem('patch_obzvon_20260623');
 
 
 // Проверка дублей при загрузке (с задержкой)
