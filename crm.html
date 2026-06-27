@@ -4154,8 +4154,9 @@ setTimeout(async () => {
   } catch(e) {}
   if (!_isPhone) await ghSave();
 }, 8000);
-// Обзвон 23.06 — однократный импорт
-(function() {
+// Обзвон 23.06 — однократный импорт (после автосинка)
+localStorage.removeItem('patch_obzvon_20260623');
+setTimeout(function() {
   if (localStorage.getItem('patch_obzvon_20260623')) return;
   const ENTRIES = [
     { name: 'Диана / Марьям 4 г.', phone: '89628827028', note: 'Записались, придут во вторник в 18.00', newStatus: 'trial', taskDate: '2026-06-30T18:00', taskText: 'Пробное — вторник 18:00' },
@@ -4207,7 +4208,8 @@ setTimeout(async () => {
   save(); render();
   showToast('✅ Обзвон 23.06: добавлено ' + added + ', обновлено ' + updated);
   localStorage.setItem('patch_obzvon_20260623', '1');
-})();
+  setTimeout(() => ghSave(), 2000);
+}, 15000);
 
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
