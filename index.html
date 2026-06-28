@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Элина Абенова</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(160deg, #f0e8f5 0%, #e8d5f0 25%, #f5dde8 55%, #f5e8d8 85%, #f0ddd0 100%);
+            min-height: 100vh;
+            color: #3d2b4e;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 44px 20px 64px;
+        }
+
+        /* HEADER */
+        .header { text-align: center; margin-bottom: 32px; }
+
+        .photo-wrap {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            overflow: hidden;
+            border: 3px solid rgba(180, 140, 200, 0.4);
+            box-shadow: 0 8px 32px rgba(150, 100, 180, 0.2);
+            background: #e8d5f0;
+        }
+
+        .photo-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: top center;
+        }
+
+        .name {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 34px;
+            font-weight: 400;
+            color: #3d2b4e;
+            letter-spacing: 0.02em;
+            margin-bottom: 8px;
+        }
+
+        .tagline {
+            font-size: 13px;
+            font-weight: 300;
+            color: #9b7eb8;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        /* CARDS */
+        .card {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(12px);
+            border-radius: 22px;
+            padding: 24px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(200, 170, 220, 0.3);
+        }
+
+        .card-title {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 22px;
+            font-weight: 500;
+            color: #3d2b4e;
+            margin-bottom: 12px;
+        }
+
+        .card p {
+            font-size: 14px;
+            line-height: 1.75;
+            color: #5a4060;
+            font-weight: 300;
+        }
+
+        .dots { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
+
+        .dot-item {
+            font-size: 14px;
+            color: #5a4060;
+            font-weight: 300;
+            padding-left: 18px;
+            position: relative;
+            line-height: 1.5;
+        }
+
+        .dot-item::before {
+            content: '✦';
+            position: absolute;
+            left: 0;
+            color: #c9956a;
+            font-size: 9px;
+            top: 4px;
+        }
+
+        /* CLUB CARD */
+        .club-card {
+            background: linear-gradient(135deg, rgba(180, 140, 210, 0.22) 0%, rgba(220, 170, 200, 0.22) 100%);
+            backdrop-filter: blur(12px);
+            border-radius: 22px;
+            padding: 28px 24px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(200, 160, 220, 0.4);
+            text-align: center;
+        }
+
+        .club-name {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 28px;
+            font-weight: 400;
+            font-style: italic;
+            color: #3d2b4e;
+            margin-bottom: 4px;
+        }
+
+        .club-sub {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #9b7eb8;
+            margin-bottom: 18px;
+        }
+
+        .club-desc {
+            font-size: 14px;
+            line-height: 1.75;
+            color: #5a4060;
+            font-weight: 300;
+            margin-bottom: 6px;
+        }
+
+        .club-features {
+            text-align: left;
+            margin: 14px 0 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .club-features .dot-item { color: #5a4060; }
+
+        .price-tag {
+            display: inline-block;
+            background: rgba(255,255,255,0.65);
+            border-radius: 30px;
+            padding: 7px 20px;
+            font-size: 15px;
+            font-weight: 500;
+            color: #3d2b4e;
+            margin-bottom: 22px;
+            letter-spacing: 0.01em;
+        }
+
+        /* BUTTONS */
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 16px 20px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 400;
+            text-align: center;
+            margin-bottom: 10px;
+            transition: transform 0.15s, opacity 0.15s;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+        }
+
+        .btn:active { transform: scale(0.97); opacity: 0.88; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #b48cc8 0%, #d4a0b8 100%);
+            color: white;
+            box-shadow: 0 4px 22px rgba(170, 120, 200, 0.32);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.65);
+            color: #5a4060;
+            border: 1px solid rgba(180, 140, 200, 0.35);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: #7a5c9a;
+            border: 1px solid rgba(150, 100, 180, 0.3);
+        }
+
+        /* STUDIO */
+        .studio-card {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(12px);
+            border-radius: 22px;
+            padding: 24px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(200, 170, 220, 0.22);
+        }
+
+        /* DIVIDER */
+        .divider {
+            text-align: center;
+            color: rgba(180, 140, 200, 0.45);
+            font-size: 13px;
+            letter-spacing: 10px;
+            margin: 6px 0 14px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 36px;
+            font-size: 12px;
+            color: rgba(90, 64, 96, 0.4);
+            font-weight: 300;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="photo-wrap">
+            <img src="elina-photo.jpg" alt="Элина Абенова">
+        </div>
+        <h1 class="name">Элина Абенова</h1>
+        <p class="tagline">Педагог-хореограф · Сочи</p>
+    </div>
+
+    <!-- ABOUT -->
+    <div class="card">
+        <h2 class="card-title">Обо мне</h2>
+        <p>Танцую всю жизнь. Преподаю контемпорари и создаю пространства, где девушки чувствуют себя живыми — в теле, в себе, в движении.</p>
+        <div class="dots">
+            <div class="dot-item">Педагог-хореограф, контемпорари</div>
+            <div class="dot-item">Окончила Краснодарский краевой колледж культуры с отличием</div>
+            <div class="dot-item">Авторская методика — работаю с детьми и взрослыми</div>
+            <div class="dot-item">Основатель студии танца «Движение Океана», Сочи</div>
+        </div>
+    </div>
+
+    <div class="divider">✦ ✦ ✦</div>
+
+    <!-- CLUB -->
+    <div class="club-card">
+        <div class="club-name">Ты — есть Вселенная</div>
+        <div class="club-sub">Закрытый танцевальный онлайн-клуб</div>
+        <p class="club-desc">Пространство, где девушки раскрывают женственность и уверенность через контемпорари — и находят своё комьюнити. Из любого города, с любым опытом.</p>
+        <div class="club-features">
+            <div class="dot-item">Раскрепощённость и пластика тела</div>
+            <div class="dot-item">Уверенность в себе и своей женственности</div>
+            <div class="dot-item">Тёплое женское комьюнити</div>
+            <div class="dot-item">Тренировки, растяжка, медитации и живые созвоны</div>
+        </div>
+        <div class="price-tag">2 490 ₽ / месяц</div>
+        <a href="https://t.me/elina_oceanmove" class="btn btn-primary">Попробовать 3 дня бесплатно</a>
+        <a href="https://t.me/elina_oceanmove" class="btn btn-secondary">Написать Элине</a>
+    </div>
+
+    <div class="divider">✦ ✦ ✦</div>
+
+    <!-- STUDIO -->
+    <div class="studio-card">
+        <h2 class="card-title">Студия «Движение Океана»</h2>
+        <p style="font-size:14px; color:#5a4060; font-weight:300; line-height:1.75; margin-bottom:16px;">
+            Офлайн-студия в Сочи для детей и взрослых. Индивидуальные занятия с Элиной и педагогами студии. Бесплатное пробное занятие для детей.
+        </p>
+        <a href="https://t.me/ocean_movement" class="btn btn-ghost">Записаться в студию</a>
+    </div>
+
+    <!-- INSTAGRAM -->
+    <a href="https://instagram.com/" class="btn btn-secondary">Instagram</a>
+
+    <div class="footer">Элина Абенова · Сочи · 2026</div>
+
+</div>
+</body>
+</html>
