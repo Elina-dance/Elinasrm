@@ -78,19 +78,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(CLUB_INFO_TEXT, reply_markup=about_keyboard())
+    await query.message.reply_text(CLUB_INFO_TEXT, reply_markup=about_keyboard())
 
 
 async def button_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(WELCOME_TEXT, reply_markup=main_keyboard())
+    await query.message.reply_text(WELCOME_TEXT, reply_markup=main_keyboard())
 
 
 async def button_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(PAYMENT_TEXT)
+    await query.message.reply_text(PAYMENT_TEXT)
     return WAITING_RECEIPT
 
 
