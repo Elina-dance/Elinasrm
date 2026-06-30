@@ -4272,6 +4272,60 @@ setTimeout(function() {
   setTimeout(() => ghSave(), 2000);
 }, 15000);
 
+// Обзвон 23.06 — карточки 74-77 (однократно)
+setTimeout(function() {
+  if (localStorage.getItem('patch_obzvon_74_77_v1')) return;
+  function norm74(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  // Если Мира 3,8 г. уже есть — патч уже применён
+  if (clients.some(c => norm74(c.phone) === '9891605888')) {
+    localStorage.setItem('patch_obzvon_74_77_v1', '1'); return;
+  }
+  const E74 = [
+    { name: 'Мира 3,8 г. — мама Кристина', phone: '89891605888', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши', taskDate: null, taskText: null },
+    { name: 'Милена 5,5 л. — мама Даша', phone: '89673291536', note: 'Уезжают из Сочи насовсем', newStatus: 'declined', group: 'Младшие', taskDate: null, taskText: null },
+    { name: 'Лиза 9 л. — мама Вика', phone: '89026788783', note: 'Живут на Бытхе, некому возить, мама работает', newStatus: 'declined', group: 'Средние', taskDate: null, taskText: null },
+    { name: 'Ева 3-4 г. в ноябре — мама Галина', phone: '89885002684', note: 'Пока не хотят, слишком маленький ребёнок, может быть позже', newStatus: 'later', group: 'Малыши', taskDate: '2026-11-01T09:00', taskText: 'Позвонить — ребёнку будет 4 в ноябре, можно предложить снова' },
+  ];
+  let added74 = 0, updated74 = 0;
+  E74.forEach((e, i) => {
+    const pn = norm74(e.phone);
+    const c = clients.find(x => norm74(x.phone) === pn);
+    if (c) {
+      if (!(c.notes||'').includes(e.note)) {
+        c.notes = c.notes ? c.notes + '\n23.06 — ' + e.note : e.note;
+      }
+      c.status = e.newStatus;
+      if (!c.history) c.history = [];
+      const histExists = c.history.some(h => h.date === '23.06.26, 09:00' && h.result === e.note);
+      if (!histExists) c.history.push({ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' });
+      if (e.taskDate) {
+        if (!c.tasks) c.tasks = [];
+        if (!c.tasks.some(t => t.date === e.taskDate && t.comment === e.taskText)) {
+          c.tasks.push({ id: Date.now() + i, date: e.taskDate, comment: e.taskText, done: false });
+        }
+      }
+      updated74++;
+    } else {
+      clients.push({
+        id: Date.now() + i * 1000 + 74000,
+        name: e.name, phone: e.phone,
+        group: e.group || 'Малыши',
+        channel: 'Обзвон 23.06',
+        trial: '2026-06-23T09:00',
+        status: e.newStatus,
+        notes: e.note, nextCall: '',
+        history: [{ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' }],
+        tasks: e.taskDate ? [{ id: Date.now() + i * 1000 + 74001, date: e.taskDate, comment: e.taskText, done: false }] : []
+      });
+      added74++;
+    }
+  });
+  save(); render();
+  showToast('✅ Обзвон 74-77: добавлено ' + added74 + ', обновлено ' + updated74);
+  localStorage.setItem('patch_obzvon_74_77_v1', '1');
+  setTimeout(() => ghSave(), 2000);
+}, 20000);
+
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
