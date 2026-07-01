@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v16</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v17</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3820,7 +3820,7 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ GITHUB SYNC v16 ============
+// ============ GITHUB SYNC v17 ============
 const GH_OWNER = 'elina-dance';
 const GH_REPO = 'Elinasrm';
 const GH_FILE = 'crm-sync.json';
@@ -3897,6 +3897,60 @@ function scheduleTgSave() {
   if (tgSyncTimer) clearTimeout(tgSyncTimer);
   tgSyncTimer = setTimeout(() => ghSave(), 5000);
 }
+// ============ AUTO DEDUP ============
+function autoDedup(silent) {
+  function normP(p) { return (p||'').replace(/\D/g,'').replace(/^[78]/,'').slice(-10); }
+  const phoneMap = {};
+  clients.forEach(c => {
+    const pn = normP(c.phone);
+    if (pn.length < 9) return;
+    if (!phoneMap[pn]) phoneMap[pn] = [];
+    phoneMap[pn].push(c);
+  });
+  const dupGroups = Object.values(phoneMap).filter(g => g.length > 1);
+  if (!dupGroups.length) return 0;
+  const statusPrio = ['bought','trial','arrived','callback','reschedule','new','waiting','later','noanswer','declined'];
+  const toRemove = new Set();
+  dupGroups.forEach(group => {
+    group.sort((a, b) => {
+      const score = c => (c.notes||'').length + (c.history||[]).length*10 + (c.tasks||[]).length*5 + (c.abChild?100:0);
+      return score(b) - score(a);
+    });
+    const keeper = group[0];
+    group.slice(1).forEach(dup => {
+      if (dup.notes) {
+        const dn = dup.notes.trim();
+        if (dn && !(keeper.notes||'').includes(dn.slice(0,40))) {
+          keeper.notes = keeper.notes ? keeper.notes + '\n' + dn : dn;
+        }
+      }
+      if (dup.history?.length) {
+        if (!keeper.history) keeper.history = [];
+        dup.history.forEach(h => {
+          if (!keeper.history.some(kh => kh.date===h.date && kh.result===h.result)) keeper.history.push(h);
+        });
+      }
+      if (dup.tasks?.length) {
+        if (!keeper.tasks) keeper.tasks = [];
+        dup.tasks.forEach(t => {
+          if (!keeper.tasks.some(kt => kt.date===t.date && kt.comment===t.comment)) keeper.tasks.push(t);
+        });
+      }
+      const kp = statusPrio.indexOf(keeper.status), dp = statusPrio.indexOf(dup.status);
+      if (dp >= 0 && (kp < 0 || dp < kp)) keeper.status = dup.status;
+      toRemove.add(dup.id);
+    });
+  });
+  if (toRemove.size > 0) {
+    clients = clients.filter(c => !toRemove.has(c.id));
+    save();
+    if (!silent) showToast('🔗 Убраны ' + toRemove.size + ' дублей');
+    setTimeout(() => ghSave(), 2000);
+    return toRemove.size;
+  }
+  return 0;
+}
+
 // ============ DUPLICATE DETECTION ============
 let mergePairs = [];
 let currentMergeIdx = 0;
@@ -4084,6 +4138,7 @@ async function manualTgLoad() {
     const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     clients = payload.clients;
     if (payload.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(payload.archive));
+    autoDedup(true);
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
     renderTabs();
     renderCurrentTab();
@@ -4122,6 +4177,7 @@ window.onerror = function(msg, src, line, col, err) {
   }
 })();
 load();
+autoDedup(true); // убрать дубли после загрузки из localStorage
 updateExportBadge();
 render();
 const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -4141,6 +4197,7 @@ setTimeout(async () => {
       if (cloud.clients?.length > 0 && (_isPhone || cloudTime > localTime)) {
         clients = cloud.clients;
         if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+        autoDedup(true);
         localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
         localStorage.setItem('ocean_last_save', cloudTime.toString());
         renderTabs(); renderCurrentTab();
@@ -4156,16 +4213,20 @@ setTimeout(async () => {
 }, 8000);
 // Обзвон 23.06 — однократный импорт (после автосинка)
 setTimeout(function() {
-  if (localStorage.getItem('patch_obzvon_20260623_v3')) return;
+  if (localStorage.getItem('patch_obzvon_20260623_v4')) return;
+  // Если Тэя уже с правильной заметкой — патч уже применён
+  const teya = clients.find(c => (c.phone||'').replace(/\D/g,'').slice(-10) === '9996520993');
+  if (teya && (teya.notes||'').includes('Напомнить в максе')) { localStorage.setItem('patch_obzvon_20260623_v4', '1'); return; }
+  autoDedup(true); // убрать дубли перед добавлением
   const ENTRIES = [
     { name: 'Диана / Марьям 4 г.', phone: '89628827028', note: 'Записались, придут во вторник в 18.00', newStatus: 'trial', taskDate: '2026-06-30T18:00', taskText: 'Пробное — вторник 18:00' },
     { name: 'Екатерина — мама Дарьи 7 л.', phone: '89190822577', note: 'Уже ходили к нам, но недавно у ребёнка была операция, нельзя физические нагрузки. Как выздоровит, напишут и придут', newStatus: 'waiting', taskDate: null, taskText: null },
     { name: 'Аврора 4-5 л. (16 мая) — мама Лена (д/с 105)', phone: '89881441048', note: 'Вернутся в Сочи через неделю, хотят ходить. Перезвонить через неделю', newStatus: 'callback', taskDate: '2026-06-30T09:00', taskText: 'Перезвонить — вернулись в Сочи' },
     { name: 'Маша 8 л. — мама Ирина', phone: '89619095577', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Средние' },
     { name: 'Мия 6 л. Анна-Мария 9 л. София 18 л. — мама Вика', phone: '89384530200', note: 'Не хотят, пока не актуально', newStatus: 'declined', group: 'Средние' },
-    { name: 'Тэя 5,5 г. — мама Халида (д/с 17)', phone: '89996520993', note: 'Записались, придут в понедельник в 18.00', newStatus: 'trial', group: 'Младшие', taskDate: '2026-06-29T18:00', taskText: 'Напомнить Тэя — пробное в понедельник 18:00' },
+    { name: 'Тэя 5,5 г. — мама Халида (д/с 17)', phone: '89996520993', note: 'Записались, придут в понедельник в 18.00. Напомнить в максе', newStatus: 'trial', group: 'Младшие', taskDate: '2026-06-29T18:00', taskText: 'Напомнить Тэя — пробное в понедельник 18:00' },
     { name: 'Аня 5 л. — мама Людмила', phone: '89531124672', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Младшие' },
-    { name: 'Настя 6 л. — мама Вероника', phone: '89168262902', note: 'Приедут в сентябре. Позвонить или связаться', newStatus: 'later', group: 'Средние', taskDate: '2026-09-01T09:00', taskText: 'Позвонить — приезжают в сентябре' },
+    { name: 'Настя 6 л. — мама Вероника', phone: '89168262902', note: 'Приедут в сентябре. Позвонить или связаться в максе', newStatus: 'later', group: 'Средние', taskDate: '2026-09-01T09:00', taskText: 'Позвонить — приезжают в сентябре' },
     { name: 'Алитея 3 г. — мама Катя', phone: '89000621354', note: 'Не берут трубку', newStatus: 'noanswer', group: 'Малыши' },
     { name: 'Афина 4,4 г. — мама Мария', phone: '89048688012', note: 'Уезжают из Сочи', newStatus: 'declined', group: 'Малыши' },
     { name: 'Ева 4-5 л. — мама Алена (д/с 44)', phone: '89384422133', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши' },
@@ -4206,9 +4267,63 @@ setTimeout(function() {
   });
   save(); render();
   showToast('✅ Обзвон 23.06: добавлено ' + added + ', обновлено ' + updated);
-  localStorage.setItem('patch_obzvon_20260623_v3', '1');
+  localStorage.setItem('patch_obzvon_20260623_v4', '1');
   setTimeout(() => ghSave(), 2000);
 }, 15000);
+
+// Обзвон 23.06 — карточки 74-77 (однократно)
+setTimeout(function() {
+  if (localStorage.getItem('patch_obzvon_74_77_v1')) return;
+  function norm74(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  // Если Мира 3,8 г. уже есть — патч уже применён
+  if (clients.some(c => norm74(c.phone) === '9891605888')) {
+    localStorage.setItem('patch_obzvon_74_77_v1', '1'); return;
+  }
+  const E74 = [
+    { name: 'Мира 3,8 г. — мама Кристина', phone: '89891605888', note: 'Не взяли трубку', newStatus: 'noanswer', group: 'Малыши', taskDate: null, taskText: null },
+    { name: 'Милена 5,5 л. — мама Даша', phone: '89673291536', note: 'Уезжают из Сочи насовсем', newStatus: 'declined', group: 'Младшие', taskDate: null, taskText: null },
+    { name: 'Лиза 9 л. — мама Вика', phone: '89026788783', note: 'Живут на Бытхе, некому возить, мама работает', newStatus: 'declined', group: 'Средние', taskDate: null, taskText: null },
+    { name: 'Ева 3-4 г. в ноябре — мама Галина', phone: '89885002684', note: 'Пока не хотят, слишком маленький ребёнок, может быть позже', newStatus: 'later', group: 'Малыши', taskDate: '2026-11-01T09:00', taskText: 'Позвонить — ребёнку будет 4 в ноябре, можно предложить снова' },
+  ];
+  let added74 = 0, updated74 = 0;
+  E74.forEach((e, i) => {
+    const pn = norm74(e.phone);
+    const c = clients.find(x => norm74(x.phone) === pn);
+    if (c) {
+      if (!(c.notes||'').includes(e.note)) {
+        c.notes = c.notes ? c.notes + '\n23.06 — ' + e.note : e.note;
+      }
+      c.status = e.newStatus;
+      if (!c.history) c.history = [];
+      const histExists = c.history.some(h => h.date === '23.06.26, 09:00' && h.result === e.note);
+      if (!histExists) c.history.push({ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' });
+      if (e.taskDate) {
+        if (!c.tasks) c.tasks = [];
+        if (!c.tasks.some(t => t.date === e.taskDate && t.comment === e.taskText)) {
+          c.tasks.push({ id: Date.now() + i, date: e.taskDate, comment: e.taskText, done: false });
+        }
+      }
+      updated74++;
+    } else {
+      clients.push({
+        id: Date.now() + i * 1000 + 74000,
+        name: e.name, phone: e.phone,
+        group: e.group || 'Малыши',
+        channel: 'Обзвон 23.06',
+        trial: '2026-06-23T09:00',
+        status: e.newStatus,
+        notes: e.note, nextCall: '',
+        history: [{ date: '23.06.26, 09:00', result: e.note, newStatus: e.newStatus, nextCall: '' }],
+        tasks: e.taskDate ? [{ id: Date.now() + i * 1000 + 74001, date: e.taskDate, comment: e.taskText, done: false }] : []
+      });
+      added74++;
+    }
+  });
+  save(); render();
+  showToast('✅ Обзвон 74-77: добавлено ' + added74 + ', обновлено ' + updated74);
+  localStorage.setItem('patch_obzvon_74_77_v1', '1');
+  setTimeout(() => ghSave(), 2000);
+}, 20000);
 
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
