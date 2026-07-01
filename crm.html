@@ -4325,6 +4325,83 @@ setTimeout(function() {
   setTimeout(() => ghSave(), 2000);
 }, 20000);
 
+// Новые клиенты конец июня — начало июля 2026
+setTimeout(function() {
+  if (localStorage.getItem('patch_new_clients_july_v1')) return;
+  function normN(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  // Эмилия 6,5 бабушка Виктория — маркер что патч уже применён
+  if (clients.some(c => normN(c.phone) === '9186080971')) {
+    localStorage.setItem('patch_new_clients_july_v1', '1'); return;
+  }
+  const NE = [
+    // Не хотят — далеко ездить
+    { name: 'Анна 5 л. / Ариана 4 г. — мама Луиза', phone: '', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Младшие', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'София 3,5 г. — мама Мария', phone: '', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Ульяна 3,5 г. — мама Настя', phone: '89654824332', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Мия 4,5 г. — мама Татьяна', phone: '', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Алиса 4 г. — мама Анастасия', phone: '89696520772', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    // Индивидуальные
+    { name: 'Эмилия 6,5 г. — бабушка Виктория', phone: '89186080971', note: 'Записались в субботу в 13.00. Написать в максе', status: 'trial', group: 'Младшие', channel: 'Обзвон', trial: '2026-07-05T13:00', taskDate: '2026-07-05T13:00', taskText: 'Пробное Эмилия — суббота 5 июля 13:00. Написать в максе' },
+    { name: 'Кира 3 г. — мама Надежда', phone: '89857231156', note: '', status: 'new', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Алина 5,9 г. — мама Юля', phone: '89897536867', note: 'Записались в пятницу в 18.00', status: 'trial', group: 'Младшие', channel: 'Обзвон', trial: '2026-07-04T18:00', taskDate: '2026-07-04T18:00', taskText: 'Пробное Алина — пятница 4 июля 18:00' },
+    { name: 'Давид 4 г. (5 в июле) — мама Лиана', phone: '89881818824', note: '', status: 'new', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Варвара 4 г. / Ульяна 3,10 — мама Даша, папа Артём записал', phone: '89189018491', note: 'Папа Артём записал на пробное, уточнить дату', status: 'trial', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: '2026-07-02T09:00', taskText: 'Уточнить дату пробного — папа Артём записал Варвару и Ульяну' },
+    { name: 'Ариана 3,5 г. — папа Николай, мама Алина', phone: '89183063234', note: 'Не взяли трубку', status: 'noanswer', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Ева 4,1 / Ника 4,1 — мама Марина', phone: '89884182101', note: 'Записались в среду 1 июля в 18.00. Написать в максе', status: 'trial', group: 'Малыши', channel: 'Обзвон', trial: '2026-07-01T18:00', taskDate: '2026-07-01T18:00', taskText: 'Пробное Ева и Ника — среда 1 июля 18:00. Написать в максе' },
+    { name: 'София 3,4 г. — мама Лидия', phone: '89654776564', note: 'Приедут через 2 недели', status: 'callback', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: '2026-07-15T09:00', taskText: 'Позвонить — приедут через 2 недели' },
+    { name: 'Виссарион 4 г. (5 в августе) — мама Валерия', phone: '89183025549', note: '', status: 'new', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Анна 4,5 г. — мама Татэвик', phone: '89282595455', note: 'Не хотят, плохо говорят по-русски, бросили трубку', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
+    { name: 'Лана 4 г. — папа Карен, мама Виолетта', phone: '89186105334', note: 'Некому водить, звонок сорвался, второй раз не взяли трубку', status: 'callback', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: '2026-07-03T09:00', taskText: 'Перезвонить Лане — звонок сорвался, некому возить, обсудить' },
+    // Промоутер, Навагинская
+    { name: 'Дима 4,1 г. — бабушка Анастасия', phone: '89676410777', note: '', status: 'new', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: null, taskText: null },
+    { name: 'Таисия (5 в июле) — папа Антон, мама Юля', phone: '89937650484', note: 'Хотят только после 15 июля', status: 'callback', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: '2026-07-15T09:00', taskText: 'Позвонить Таисии — хотят после 15 июля' },
+    { name: 'Аня 4,9 г. — мама Ангелина', phone: '89881632609', note: 'Поговорит с мужем, позвонить завтра', status: 'callback', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: '2026-07-02T09:00', taskText: 'Позвонить Ане — поговорит с мужем' },
+    { name: 'Милана 7 л. — мама Светлана', phone: '89059859236', note: 'Не взяли трубку', status: 'noanswer', group: 'Средние', channel: 'Промоутер, Навагинская', trial: '', taskDate: null, taskText: null },
+    { name: 'Паулина 4,6 г. — мама Елена', phone: '89220553530', note: 'Телефон недоступен', status: 'noanswer', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: null, taskText: null },
+    { name: 'Эмилия 4 г. (5 в июле) — мама Маргарита (Ривьера-Санаторная)', phone: '89644808464', note: 'Записались в субботу в 12.00. Написать в максе', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-05T12:00', taskDate: '2026-07-05T12:00', taskText: 'Пробное Эмилия — суббота 5 июля 12:00. Написать в максе' },
+    { name: 'Варя 4 г. (5 в октябре) — мама Катя (Ривьера-Макаренко)', phone: '89186198564', note: 'Записались в субботу в 12.00. Написать в телеграм', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-05T12:00', taskDate: '2026-07-05T12:00', taskText: 'Пробное Варя — суббота 5 июля 12:00. Написать в телеграм' },
+  ];
+  let addedN = 0, updatedN = 0;
+  NE.forEach((e, i) => {
+    const pn = normN(e.phone);
+    const c = pn.length >= 9 ? clients.find(x => normN(x.phone) === pn) : null;
+    if (c) {
+      if (e.note && !(c.notes||'').includes(e.note)) {
+        c.notes = c.notes ? c.notes + '\n' + e.note : e.note;
+      }
+      c.status = e.status;
+      if (!c.history) c.history = [];
+      if (e.note && !c.history.some(h => h.date === '01.07.26' && h.result === e.note)) {
+        c.history.push({ date: '01.07.26', result: e.note, newStatus: e.status, nextCall: e.taskDate||'' });
+      }
+      if (e.taskDate) {
+        if (!c.tasks) c.tasks = [];
+        if (!c.tasks.some(t => t.date === e.taskDate && t.comment === e.taskText)) {
+          c.tasks.push({ id: Date.now() + i, date: e.taskDate, comment: e.taskText, done: false });
+        }
+      }
+      updatedN++;
+    } else {
+      clients.push({
+        id: Date.now() + i * 1000 + 100000,
+        name: e.name, phone: e.phone||'',
+        group: e.group || 'Малыши',
+        channel: e.channel || 'Обзвон',
+        trial: e.trial || '',
+        status: e.status,
+        notes: e.note || '', nextCall: e.taskDate||'',
+        history: e.note ? [{ date: '01.07.26', result: e.note, newStatus: e.status, nextCall: e.taskDate||'' }] : [],
+        tasks: e.taskDate ? [{ id: Date.now() + i * 1000 + 100001, date: e.taskDate, comment: e.taskText, done: false }] : []
+      });
+      addedN++;
+    }
+  });
+  save(); render();
+  showToast('✅ Новые клиенты: добавлено ' + addedN + ', обновлено ' + updatedN);
+  localStorage.setItem('patch_new_clients_july_v1', '1');
+  setTimeout(() => ghSave(), 3000);
+}, 25000);
+
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
   const phoneMap = {};
