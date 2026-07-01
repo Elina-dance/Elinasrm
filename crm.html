@@ -204,7 +204,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v16</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v17</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -3560,7 +3560,7 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ GITHUB SYNC v16 ============
+// ============ GITHUB SYNC v17 ============
 const GH_OWNER = 'elina-dance';
 const GH_REPO = 'Elinasrm';
 const GH_FILE = 'crm-sync.json';
@@ -3637,6 +3637,60 @@ function scheduleTgSave() {
   if (tgSyncTimer) clearTimeout(tgSyncTimer);
   tgSyncTimer = setTimeout(() => ghSave(), 5000);
 }
+// ============ AUTO DEDUP ============
+function autoDedup(silent) {
+  function normP(p) { return (p||'').replace(/\D/g,'').replace(/^[78]/,'').slice(-10); }
+  const phoneMap = {};
+  clients.forEach(c => {
+    const pn = normP(c.phone);
+    if (pn.length < 9) return;
+    if (!phoneMap[pn]) phoneMap[pn] = [];
+    phoneMap[pn].push(c);
+  });
+  const dupGroups = Object.values(phoneMap).filter(g => g.length > 1);
+  if (!dupGroups.length) return 0;
+  const statusPrio = ['bought','trial','arrived','callback','reschedule','new','waiting','later','noanswer','declined'];
+  const toRemove = new Set();
+  dupGroups.forEach(group => {
+    group.sort((a, b) => {
+      const score = c => (c.notes||'').length + (c.history||[]).length*10 + (c.tasks||[]).length*5 + (c.abChild?100:0);
+      return score(b) - score(a);
+    });
+    const keeper = group[0];
+    group.slice(1).forEach(dup => {
+      if (dup.notes) {
+        const dn = dup.notes.trim();
+        if (dn && !(keeper.notes||'').includes(dn.slice(0,40))) {
+          keeper.notes = keeper.notes ? keeper.notes + '\n' + dn : dn;
+        }
+      }
+      if (dup.history?.length) {
+        if (!keeper.history) keeper.history = [];
+        dup.history.forEach(h => {
+          if (!keeper.history.some(kh => kh.date===h.date && kh.result===h.result)) keeper.history.push(h);
+        });
+      }
+      if (dup.tasks?.length) {
+        if (!keeper.tasks) keeper.tasks = [];
+        dup.tasks.forEach(t => {
+          if (!keeper.tasks.some(kt => kt.date===t.date && kt.comment===t.comment)) keeper.tasks.push(t);
+        });
+      }
+      const kp = statusPrio.indexOf(keeper.status), dp = statusPrio.indexOf(dup.status);
+      if (dp >= 0 && (kp < 0 || dp < kp)) keeper.status = dup.status;
+      toRemove.add(dup.id);
+    });
+  });
+  if (toRemove.size > 0) {
+    clients = clients.filter(c => !toRemove.has(c.id));
+    save();
+    if (!silent) showToast('🔗 Убраны ' + toRemove.size + ' дублей');
+    setTimeout(() => ghSave(), 2000);
+    return toRemove.size;
+  }
+  return 0;
+}
+
 // ============ DUPLICATE DETECTION ============
 let mergePairs = [];
 let currentMergeIdx = 0;
@@ -3824,6 +3878,7 @@ async function manualTgLoad() {
     const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     clients = payload.clients;
     if (payload.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(payload.archive));
+    autoDedup(true);
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
     renderTabs();
     renderCurrentTab();
@@ -3862,6 +3917,7 @@ window.onerror = function(msg, src, line, col, err) {
   }
 })();
 load();
+autoDedup(true); // убрать дубли после загрузки из localStorage
 updateExportBadge();
 render();
 const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -3881,6 +3937,7 @@ setTimeout(async () => {
       if (cloud.clients?.length > 0 && (_isPhone || cloudTime > localTime)) {
         clients = cloud.clients;
         if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+        autoDedup(true);
         localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
         localStorage.setItem('ocean_last_save', cloudTime.toString());
         renderTabs(); renderCurrentTab();
