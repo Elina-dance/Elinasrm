@@ -99,6 +99,16 @@
   .history-item { font-size: 12px; color: var(--muted); padding: 6px 0; border-bottom: 1px dashed var(--border); line-height: 1.5; }
   .history-item:last-child { border-bottom: none; }
   .history-item strong { color: var(--text); }
+  .hist-tl { margin-top:8px; border-top:1px solid var(--border); padding-top:7px; }
+  .hist-tl-head { font-size:11px; color:var(--muted); font-weight:700; margin-bottom:5px; display:flex; align-items:center; gap:5px; }
+  .hist-entry { display:flex; gap:7px; padding:3px 0; align-items:flex-start; }
+  .hist-dot { width:7px; height:7px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+  .hist-body { flex:1; font-size:12px; line-height:1.45; }
+  .hist-date { color:var(--muted); font-size:11px; }
+  .hist-result { color:var(--text); }
+  .hist-more { font-size:11px; color:var(--ocean); cursor:pointer; padding:4px 0 0; display:flex; align-items:center; gap:4px; user-select:none; }
+  .hist-hidden { display:none; }
+  .hist-hidden.open { display:block; }
 
   /* MODALS */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: flex-end; }
@@ -204,7 +214,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v17</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v18</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -1338,10 +1348,27 @@ function render() {
     const tgLink = tgHandle ? `https://t.me/${tgHandle}` : (hasPhone ? `https://t.me/+7${phone.replace(/^[78]/,'')}` : null);
     const smsLink = hasPhone ? `sms:+7${phone.replace(/^[78]/,'')}` : null;
 
-    const histLen = (c.history||[]).length;
-    const histHtml = histLen
-      ? c.history.slice().reverse().map(h=>`<div class="history-item"><strong>${h.date}</strong> — ${h.result} → <em>${STATUS_MAP[h.newStatus]?.label||h.newStatus}</em>${h.nextCall?' | Следующий: '+fmtDT(h.nextCall):''}</div>`).join('')
-      : '<div class="history-item" style="color:var(--muted)">Звонков ещё не было</div>';
+    // --- Timeline history ---
+    const HIST_DOT = { new:'#2e7d32', trial:'#00838f', arrived:'#388e3c', waiting:'#3949ab', callback:'#ff6d00', noanswer:'#e65100', reschedule:'#c62828', later:'#7c4dff', bought:'#e91e8c', declined:'#9e9e9e', negotiating:'#00838f' };
+    const hist = c.history || [];
+    const boughtCount = hist.filter(h => h.newStatus === 'bought').length;
+    const renewalBadge = boughtCount > 1 ? ` · 🎓 ×${boughtCount} продлений` : '';
+    function mkHistEntry(h) {
+      const dot = HIST_DOT[h.newStatus] || '#9e9e9e';
+      const stLabel = STATUS_MAP[h.newStatus]?.label || h.newStatus || '';
+      const resultText = h.result ? h.result.replace(/"/g,'&quot;') : stLabel;
+      return `<div class="hist-entry"><div class="hist-dot" style="background:${dot}"></div><div class="hist-body"><span class="hist-date">${h.date}</span> <span class="hist-result">${resultText}</span></div></div>`;
+    }
+    let tlInner;
+    if (hist.length === 0) {
+      const addedDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+      tlInner = `<div class="hist-entry"><div class="hist-dot" style="background:#2e7d32"></div><div class="hist-body"><span class="hist-date">${addedDate}</span> <span class="hist-result" style="color:var(--muted)">Клиент добавлен</span></div></div>`;
+    } else {
+      const rev = hist.slice().reverse();
+      const visible = rev.slice(0, 2).map(mkHistEntry).join('');
+      const hidden = rev.slice(2).map(mkHistEntry).join('');
+      tlInner = visible + (hidden ? `<div class="hist-more" onclick="toggleHistFull('hf${c.id}','hfa${c.id}')">📋 Вся история (${hist.length}) <span id="hfa${c.id}">▼</span></div><div class="hist-hidden" id="hf${c.id}">${hidden}</div>` : '');
+    }
 
     html += `<div class="card ${s.cardCls} ${od?'overdue-card':''}">
       <div class="card-header">
@@ -1363,10 +1390,10 @@ function render() {
         <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
         <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:9px 10px;font-size:12px;cursor:pointer;">⚙️</button>
       </div>
-      <div class="history-toggle" onclick="toggleHistory('h${c.id}')">
-        📋 История звонков (${histLen}) <span id="ha${c.id}">▼</span>
+      <div class="hist-tl">
+        <div class="hist-tl-head">📋 История${renewalBadge}</div>
+        ${tlInner}
       </div>
-      <div class="history" id="h${c.id}">${histHtml}</div>
     </div>`;
   });
   el.innerHTML = html;
@@ -1375,8 +1402,16 @@ function render() {
 function toggleHistory(id) {
   const el = document.getElementById(id);
   const arrow = document.getElementById('a'+id);
+  if (!el) return;
   el.classList.toggle('open');
   if(arrow) arrow.textContent = el.classList.contains('open') ? '▲' : '▼';
+}
+function toggleHistFull(elId, arrowId) {
+  const el = document.getElementById(elId);
+  const arrow = document.getElementById(arrowId);
+  if (!el) return;
+  el.classList.toggle('open');
+  if (arrow) arrow.textContent = el.classList.contains('open') ? '▲' : '▼';
 }
 
 // ============ REMINDERS ============
@@ -4583,6 +4618,24 @@ setTimeout(() => {
     showToast(`⚠️ Найдено ${dups.length} дублей! Нажми «🔗 Дубли»`);
   }
 }, 3000);
+
+// Однократный патч: добавить «Клиент добавлен» в историю карточек без истории
+setTimeout(function() {
+  if (localStorage.getItem('patch_hist_backfill_v1')) return;
+  let filled = 0;
+  clients.forEach(c => {
+    if ((c.history||[]).length === 0) {
+      if (!c.history) c.history = [];
+      const addedDate = c.createdAt
+        ? new Date(c.createdAt).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})
+        : '—';
+      c.history.push({ date: addedDate, result: 'Клиент добавлен', newStatus: c.status || 'new', nextCall: '' });
+      filled++;
+    }
+  });
+  if (filled > 0) { save(); render(); }
+  localStorage.setItem('patch_hist_backfill_v1', '1');
+}, 32000);
 </script>
 </body>
 </html>
