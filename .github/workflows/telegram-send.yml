@@ -1,0 +1,37 @@
+name: 📨 Telegram — разовая рассылка
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Текст сообщения'
+        required: true
+        type: string
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Отправить сообщение
+        run: |
+          python3 -c "
+          import os, requests
+          TOKEN   = os.environ['TELEGRAM_BOT_TOKEN']
+          CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+          text    = os.environ['MESSAGE']
+          resp = requests.post(
+              f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+              json={'chat_id': CHAT_ID, 'text': text},
+              timeout=15,
+          )
+          data = resp.json()
+          if data.get('ok'):
+              print(f'✅ Отправлено! message_id={data[\"result\"][\"message_id\"]}')
+          else:
+              print(f'❌ Ошибка: {data}')
+              exit(1)
+          "
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          MESSAGE:            ${{ inputs.message }}
