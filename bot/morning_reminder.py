@@ -23,10 +23,11 @@ if not today:
     print(f"Сегодня ({day_key}) занятий нет — ничего не отправляем.")
     sys.exit(0)
 
-lines = ["🌊 <b>Доброе утро!</b> Сегодня занятия:", ""]
-for cls in today:
-    lines.append(f"🕐 <b>{cls['time']}</b> — {cls['group']}")
-lines += ["", "Ждём всех! Берите хорошее настроение 💃✨"]
+time_str = today[0]['time'] if today else ''
+lines = [
+    "Доброе утро🌊",
+    f"Ждём сегодня на тренировку по расписанию в {time_str}❣️"
+]
 
 text = "\n".join(lines)
 
