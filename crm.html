@@ -1509,6 +1509,18 @@ function renderReminders() {
         futureMap[key].push({ c, type: 'abon', time: d });
       }
     }
+    // tasks в будущем (не отмечены как done)
+    (c.tasks||[]).forEach(t => {
+      if (t.done) return;
+      const d = new Date(t.date);
+      if (isNaN(d) || d < tomorrow) return;
+      const key = d.toISOString().split('T')[0];
+      if (!futureMap[key]) futureMap[key] = [];
+      // не дублируем если nextCall уже добавил этот день для этого клиента
+      if (!futureMap[key].some(x => x.c.id === c.id && x.type === 'call')) {
+        futureMap[key].push({ c, type: 'call', time: d });
+      }
+    });
   });
 
   const futureDays = Object.keys(futureMap).sort();
