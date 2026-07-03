@@ -1553,10 +1553,14 @@ function renderReminders() {
         const typeIcon = type === 'trial' ? '🎯' : type === 'abon' ? '🔔' : '📞';
         const typeLabel = type === 'trial' ? 'Пробное' : type === 'abon' ? 'Абонемент' : 'Звонок';
         const timeStr = type === 'trial' ? fmtTime(c.trial) : type === 'abon' ? '' : fmtTime(c.nextCall);
-        // Для пробного — предзаполненное напоминание
-        const futureMsg = type === 'trial' && c.trial
-          ? `Добрый вечер, ${extractMomName(c.name)}! Напоминаем о пробном занятии завтра в ${fmtTime(c.trial)} 🌊`
-          : '';
+        // Для пробного — предзаполненное напоминание (только если завтра; иначе без "завтра")
+        const futureMsg = (() => {
+          if (type !== 'trial' || !c.trial) return '';
+          const tomorrowKey = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+          const isTomorrow = dateKey === tomorrowKey;
+          const dayRef = isTomorrow ? 'завтра' : 'в ' + new Date(dateKey).toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'short'});
+          return `Добрый вечер, ${extractMomName(c.name)}! Напоминаем о пробном занятии ${dayRef} в ${fmtTime(c.trial)} 🌊`;
+        })();
         // Кнопки мессенджеров (компактные, только иконки)
         const rawPhone = c.phone ? c.phone.replace(/\D/g,'') : '';
         const hasPhone = rawPhone.length >= 10 && !c.phone?.startsWith('@');
