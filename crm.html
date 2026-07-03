@@ -1281,13 +1281,12 @@ function undoStatus(id) {
 
 // Клиенты у кого nextCall стоит сегодня (включая "вернутся через время")
 function hasTodayCall(c) {
-  if (!c.nextCall) {
-    // проверяем задачи
-    return (c.tasks||[]).some(t => {
-      const d = new Date(t.date);
-      return !t.done && d >= todayStart() && d < tomorrowStart();
-    });
-  }
+  const taskToday = (c.tasks||[]).some(t => {
+    const d = new Date(t.date);
+    return !t.done && d >= todayStart() && d < tomorrowStart();
+  });
+  if (taskToday) return true;
+  if (!c.nextCall) return false;
   const d = new Date(c.nextCall);
   return d >= todayStart() && d < tomorrowStart();
 }
