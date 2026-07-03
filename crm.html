@@ -1769,6 +1769,18 @@ function renderReminders() {
         futureMap[key].push({ c, type: 'abon', time: d });
       }
     }
+    // tasks в будущем (не отмечены как done)
+    (c.tasks||[]).forEach(t => {
+      if (t.done) return;
+      const d = new Date(t.date);
+      if (isNaN(d) || d < tomorrow) return;
+      const key = d.toISOString().split('T')[0];
+      if (!futureMap[key]) futureMap[key] = [];
+      // не дублируем если nextCall уже добавил этот день для этого клиента
+      if (!futureMap[key].some(x => x.c.id === c.id && x.type === 'call')) {
+        futureMap[key].push({ c, type: 'call', time: d });
+      }
+    });
   });
 
   const futureDays = Object.keys(futureMap).sort();
@@ -4541,7 +4553,7 @@ setTimeout(function() {
     { name: 'Мия 4,5 г. — мама Татьяна', phone: '', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
     { name: 'Алиса 4 г. — мама Анастасия', phone: '89696520772', note: 'Не хотят, далеко ездить', status: 'declined', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
     // Индивидуальные
-    { name: 'Эмилия 6,5 г. — бабушка Виктория', phone: '89186080971', note: 'Записались в субботу в 13.00. Написать в максе', status: 'trial', group: 'Младшие', channel: 'Обзвон', trial: '2026-07-05T13:00', taskDate: '2026-07-05T13:00', taskText: 'Пробное Эмилия — суббота 5 июля 13:00. Написать в максе' },
+    { name: 'Эмилия 6,5 г. — бабушка Виктория', phone: '89186080971', note: 'Записались в субботу в 13.00. Написать в максе', status: 'trial', group: 'Младшие', channel: 'Обзвон', trial: '2026-07-04T13:00', taskDate: '2026-07-04T13:00', taskText: 'Пробное Эмилия — суббота 4 июля 13:00. Написать в максе' },
     { name: 'Кира 3 г. — мама Надежда', phone: '89857231156', note: '', status: 'new', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
     { name: 'Алина 5,9 г. — мама Юля', phone: '89897536867', note: 'Записались в пятницу в 18.00', status: 'trial', group: 'Младшие', channel: 'Обзвон', trial: '2026-07-04T18:00', taskDate: '2026-07-04T18:00', taskText: 'Пробное Алина — пятница 4 июля 18:00' },
     { name: 'Давид 4 г. (5 в июле) — мама Лиана', phone: '89881818824', note: '', status: 'new', group: 'Малыши', channel: 'Обзвон', trial: '', taskDate: null, taskText: null },
@@ -4558,8 +4570,8 @@ setTimeout(function() {
     { name: 'Аня 4,9 г. — мама Ангелина', phone: '89881632609', note: 'Поговорит с мужем, позвонить завтра', status: 'callback', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: '2026-07-02T09:00', taskText: 'Позвонить Ане — поговорит с мужем' },
     { name: 'Милана 7 л. — мама Светлана', phone: '89059859236', note: 'Не взяли трубку', status: 'noanswer', group: 'Средние', channel: 'Промоутер, Навагинская', trial: '', taskDate: null, taskText: null },
     { name: 'Паулина 4,6 г. — мама Елена', phone: '89220553530', note: 'Телефон недоступен', status: 'noanswer', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '', taskDate: null, taskText: null },
-    { name: 'Эмилия 4 г. (5 в июле) — мама Маргарита (Ривьера-Санаторная)', phone: '89644808464', note: 'Записались в субботу в 12.00. Написать в максе', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-05T12:00', taskDate: '2026-07-05T12:00', taskText: 'Пробное Эмилия — суббота 5 июля 12:00. Написать в максе' },
-    { name: 'Варя 4 г. (5 в октябре) — мама Катя (Ривьера-Макаренко)', phone: '89186198564', note: 'Записались в субботу в 12.00. Написать в телеграм', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-05T12:00', taskDate: '2026-07-05T12:00', taskText: 'Пробное Варя — суббота 5 июля 12:00. Написать в телеграм' },
+    { name: 'Эмилия 4 г. (5 в июле) — мама Маргарита (Ривьера-Санаторная)', phone: '89644808464', note: 'Записались в субботу в 12.00. Написать в максе', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-04T12:00', taskDate: '2026-07-04T12:00', taskText: 'Пробное Эмилия — суббота 4 июля 12:00. Написать в максе' },
+    { name: 'Варя 4 г. (5 в октябре) — мама Катя (Ривьера-Макаренко)', phone: '89186198564', note: 'Записались в субботу в 12.00. Написать в телеграм', status: 'trial', group: 'Малыши', channel: 'Промоутер, Навагинская', trial: '2026-07-04T12:00', taskDate: '2026-07-04T12:00', taskText: 'Пробное Варя — суббота 4 июля 12:00. Написать в телеграм' },
   ];
   let addedN = 0, updatedN = 0;
   NE.forEach((e, i) => {
@@ -4635,6 +4647,29 @@ setTimeout(function() {
   if (filled > 0) { save(); render(); }
   localStorage.setItem('patch_hist_backfill_v1', '1');
 }, 32000);
+
+// Фикс: пробные 5 июля (воскресенье) → 4 июля (суббота)
+setTimeout(function() {
+  if (localStorage.getItem('patch_fix_sunday_july5_v1')) return;
+  const BAD = '2026-07-05';
+  const GOOD_MAP = { 'T12:00': '2026-07-04T12:00', 'T13:00': '2026-07-04T13:00' };
+  let fixed = 0;
+  clients.forEach(c => {
+    if (c.trial && c.trial.startsWith(BAD)) {
+      const suffix = c.trial.slice(10); // 'T12:00' или 'T13:00'
+      c.trial = GOOD_MAP[suffix] || '2026-07-04T12:00';
+      if (c.nextCall && c.nextCall.startsWith(BAD)) c.nextCall = c.trial;
+      (c.tasks||[]).forEach(t => { if (t.date && t.date.startsWith(BAD)) t.date = c.trial; });
+      fixed++;
+    }
+  });
+  if (fixed > 0) {
+    save(); render();
+    showToast('📅 Исправлено: ' + fixed + ' пробных с вс 5.07 → сб 4.07');
+    setTimeout(() => ghSave(), 2000);
+  }
+  localStorage.setItem('patch_fix_sunday_july5_v1', '1');
+}, 33000);
 
 // Гарантированно добавить Лану (звонок 3 июля) — отдельный патч
 setTimeout(function() {
