@@ -1150,9 +1150,9 @@ function fmtTime(s) {
   return new Date(s).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 }
 function isOverdue(c) {
-  if (!c.nextCall) return false;
   if (c.status === 'bought' || c.status === 'declined') return false;
-  return new Date(c.nextCall) < todayStart();
+  if (c.nextCall && new Date(c.nextCall) < todayStart()) return true;
+  return (c.tasks||[]).some(t => !t.done && t.date && new Date(t.date) < todayStart());
 }
 function hasTodayTrial(c) {
   if (!c.trial) return false;
@@ -3194,7 +3194,34 @@ function toggleMonthSection(uid) {
 }
 
 // ============ ДЕЙСТВУЮЩИЕ ============
+// Авто-архивация: добавляет в месячный архив всех bought с abStart в текущем месяце
+// (ловит клиентов, добавленных через патчи/импорт, минуя archiveBoughtEntry)
+function autoArchiveCurrentMonth() {
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const archive = getMonthArchive(monthKey);
+  let changed = false;
+  clients.forEach(c => {
+    if (c.status !== 'bought' || !c.abStart) return;
+    const d = new Date(c.abStart);
+    if (isNaN(d) || d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) return;
+    if (archive.bought.find(x => x.id === c.id)) return;
+    const prevBought = (c.history||[]).filter(h => h.newStatus === 'bought');
+    const isNew = prevBought.length <= 1;
+    archive.bought.push({
+      id: c.id, name: c.name, abChild: c.abChild || '',
+      group: c.abGroup || c.group || '',
+      abAmount: c.abAmount || '',
+      date: d.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit',year:'numeric'}),
+      isNew: isNew
+    });
+    changed = true;
+  });
+  if (changed) saveMonthArchive(monthKey, archive);
+}
+
 function renderActive() {
+  autoArchiveCurrentMonth();
   const el = document.getElementById('content');
   checkMonthReset();
   const DAY_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
