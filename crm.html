@@ -1813,10 +1813,14 @@ function renderReminders() {
         const typeIcon = type === 'trial' ? '🎯' : type === 'abon' ? '🔔' : '📞';
         const typeLabel = type === 'trial' ? 'Пробное' : type === 'abon' ? 'Абонемент' : 'Звонок';
         const timeStr = type === 'trial' ? fmtTime(c.trial) : type === 'abon' ? '' : fmtTime(c.nextCall);
-        // Для пробного — предзаполненное напоминание
-        const futureMsg = type === 'trial' && c.trial
-          ? `Добрый вечер, ${extractMomName(c.name)}! Напоминаем о пробном занятии завтра в ${fmtTime(c.trial)} 🌊`
-          : '';
+        // Для пробного — предзаполненное напоминание (только если завтра; иначе без "завтра")
+        const futureMsg = (() => {
+          if (type !== 'trial' || !c.trial) return '';
+          const tomorrowKey = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+          const isTomorrow = dateKey === tomorrowKey;
+          const dayRef = isTomorrow ? 'завтра' : 'в ' + new Date(dateKey).toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'short'});
+          return `Добрый вечер, ${extractMomName(c.name)}! Напоминаем о пробном занятии ${dayRef} в ${fmtTime(c.trial)} 🌊`;
+        })();
         // Кнопки мессенджеров (компактные, только иконки)
         const rawPhone = c.phone ? c.phone.replace(/\D/g,'') : '';
         const hasPhone = rawPhone.length >= 10 && !c.phone?.startsWith('@');
@@ -4790,6 +4794,33 @@ setTimeout(function() {
   localStorage.setItem('patch_veronika_davydova_v1', '1');
   setTimeout(() => ghSave(), 3000);
 }, 37000);
+
+// Фикс: Алина 5,9 г. — пробное было в ПЯТНИЦУ (3 июля), а в данных стояло 4 июля (суббота)
+setTimeout(function() {
+  if (localStorage.getItem('patch_fix_alina_july3_v1')) return;
+  function normA(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  const ALINA_PHONE = '9897536867';
+  const BAD_DATE = '2026-07-04T18:00';
+  const GOOD_DATE = '2026-07-03T18:00';
+  const c = clients.find(x => normA(x.phone) === ALINA_PHONE);
+  if (!c) { localStorage.setItem('patch_fix_alina_july3_v1', '1'); return; }
+  let fixed = false;
+  if (c.trial === BAD_DATE) { c.trial = GOOD_DATE; fixed = true; }
+  if (c.nextCall === BAD_DATE) { c.nextCall = GOOD_DATE; fixed = true; }
+  (c.tasks||[]).forEach(t => {
+    if (t.date === BAD_DATE) {
+      t.date = GOOD_DATE;
+      t.comment = t.comment ? t.comment.replace('4 июля', '3 июля').replace('пятница', 'пятница') : t.comment;
+      fixed = true;
+    }
+  });
+  if (fixed) {
+    save(); render();
+    showToast('📅 Алина 5,9 г. — пробное исправлено: пятница 3 июля 18:00');
+    setTimeout(() => ghSave(), 2000);
+  }
+  localStorage.setItem('patch_fix_alina_july3_v1', '1');
+}, 39000);
 </script>
 </body>
 </html>
