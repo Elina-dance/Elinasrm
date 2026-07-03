@@ -4727,6 +4727,42 @@ setTimeout(function() {
   localStorage.setItem('patch_lana_july3_v1', '1');
   setTimeout(() => ghSave(), 3000);
 }, 35000);
+
+// Вероника Давыдова — мама Анна — пришли на пробное 03.07, оплатили 5200 ₽
+setTimeout(function() {
+  if (localStorage.getItem('patch_veronika_davydova_v1')) return;
+  function normVD(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  if (clients.some(c => normVD(c.phone) === '9181322486')) {
+    localStorage.setItem('patch_veronika_davydova_v1', '1'); return;
+  }
+  clients.push({
+    id: Date.now() + 999001,
+    name: 'Вероника Давыдова — мама Анна',
+    phone: '89181322486',
+    group: 'Младшие',
+    channel: 'Рабочий тг',
+    trial: '2026-07-03T18:00',
+    status: 'bought',
+    notes: 'Пн/пт, 2 раза. Абонемент 6.07–31.07. 5200 ₽.',
+    nextCall: '',
+    history: [
+      { date: '03.07.26', result: '🩷 Оплатили 5200 ₽. Пробное 03.07. Рабочий тг.', newStatus: 'bought', nextCall: '' }
+    ],
+    abChild: 'Вероника Давыдова',
+    abMom: 'Анна',
+    abGroup: 'Младшие',
+    abStart: '2026-07-06',
+    abEnd: '2026-07-31',
+    abDays: [1, 5],
+    abAmount: '5200',
+    abNotes: 'Пн/пт 2 раза. 6.07–31.07.',
+    createdAt: new Date().toISOString()
+  });
+  save(); render();
+  showToast('✅ Вероника Давыдова добавлена');
+  localStorage.setItem('patch_veronika_davydova_v1', '1');
+  setTimeout(() => ghSave(), 3000);
+}, 37000);
 </script>
 </body>
 </html>
