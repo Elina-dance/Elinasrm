@@ -1541,13 +1541,12 @@ function undoStatus(id) {
 
 // Клиенты у кого nextCall стоит сегодня (включая "вернутся через время")
 function hasTodayCall(c) {
-  if (!c.nextCall) {
-    // проверяем задачи
-    return (c.tasks||[]).some(t => {
-      const d = new Date(t.date);
-      return !t.done && d >= todayStart() && d < tomorrowStart();
-    });
-  }
+  const taskToday = (c.tasks||[]).some(t => {
+    const d = new Date(t.date);
+    return !t.done && d >= todayStart() && d < tomorrowStart();
+  });
+  if (taskToday) return true;
+  if (!c.nextCall) return false;
   const d = new Date(c.nextCall);
   return d >= todayStart() && d < tomorrowStart();
 }
@@ -4636,6 +4635,42 @@ setTimeout(function() {
   if (filled > 0) { save(); render(); }
   localStorage.setItem('patch_hist_backfill_v1', '1');
 }, 32000);
+
+// Гарантированно добавить Лану (звонок 3 июля) — отдельный патч
+setTimeout(function() {
+  if (localStorage.getItem('patch_lana_july3_v1')) return;
+  function normL(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  const LANA_PHONE = '9186105334';
+  const LANA_TASK_DATE = '2026-07-03T09:00';
+  const LANA_TASK_TEXT = 'Перезвонить Лане — звонок сорвался, некому возить, обсудить';
+  let c = clients.find(x => normL(x.phone) === LANA_PHONE);
+  if (!c) {
+    c = {
+      id: Date.now() + 777777,
+      name: 'Лана 4 г. — папа Карен, мама Виолетта',
+      phone: '89186105334',
+      group: 'Малыши', channel: 'Обзвон', trial: '',
+      status: 'callback',
+      notes: 'Некому водить, звонок сорвался, второй раз не взяли трубку',
+      nextCall: LANA_TASK_DATE,
+      history: [{ date: '01.07.26', result: 'Некому водить, звонок сорвался, второй раз не взяли трубку', newStatus: 'callback', nextCall: LANA_TASK_DATE }],
+      tasks: [{ id: Date.now() + 777778, date: LANA_TASK_DATE, comment: LANA_TASK_TEXT, done: false }]
+    };
+    clients.push(c);
+  } else {
+    if (!c.tasks) c.tasks = [];
+    if (!c.tasks.some(t => t.date === LANA_TASK_DATE && t.comment === LANA_TASK_TEXT)) {
+      c.tasks.push({ id: Date.now() + 777778, date: LANA_TASK_DATE, comment: LANA_TASK_TEXT, done: false });
+    }
+    if (!c.nextCall || new Date(c.nextCall) < new Date('2026-07-03')) {
+      c.nextCall = LANA_TASK_DATE;
+    }
+  }
+  save(); render();
+  showToast('📌 Лана 4 г. — задача на сегодня добавлена');
+  localStorage.setItem('patch_lana_july3_v1', '1');
+  setTimeout(() => ghSave(), 3000);
+}, 35000);
 </script>
 </body>
 </html>
