@@ -1566,8 +1566,10 @@ function renderReminders() {
   const trialIds = new Set(trialList.map(c=>c.id));
   const callList = clients.filter(c => hasTodayCall(c) && !trialIds.has(c.id) && matchesSearch(c,q))
     .sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
+  // Блок абонементов — вычисляем ДО early return, чтобы учесть в счётчике
+  const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
 
-  const totalToday = trialList.length + callList.length;
+  const totalToday = trialList.length + callList.length + abonEndToday.length;
 
   let html = `<div class="remind-hero">
     <div class="date-big">🔔 Сегодня ${totalToday > 0 ? totalToday + ' задач' : ''}</div>
@@ -1634,7 +1636,6 @@ function renderReminders() {
   }
 
   // ── БЛОК 2: Продления абонементов — ВТОРОЙ ──
-  const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
   if (abonEndToday.length) {
     html += `<div style="margin-top:20px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
       <div style="flex:1;height:2px;background:linear-gradient(to right,var(--orange),transparent);"></div>
