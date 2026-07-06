@@ -4122,13 +4122,15 @@ async function fbSave() {
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
     const now = Date.now();
+    // Ставим метку ДО записи в Firebase — иначе listener успевает сработать
+    // раньше и видит cloudTime > localTime, перезаписывая свежие данные
+    localStorage.setItem('ocean_last_save', now.toString());
     const payload = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
       savedAt: new Date(now).toISOString()
     };
     await fbDB.ref('crm').set(payload);
-    localStorage.setItem('ocean_last_save', now.toString());
     const t = new Date(now).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
     updateSyncStatus('✅ ' + t);
@@ -4171,6 +4173,10 @@ function startFbListener() {
       }
       const cloudTime = new Date(cloud.savedAt).getTime();
       const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+
+      // Если есть несохранённые локальные изменения (таймер ещё тикает) —
+      // никогда не перезаписываем: локальные данные всегда свежее
+      if (tgSyncTimer && !_isPhone) return;
 
       if (_isPhone || cloudTime > localTime) {
         clients = cloud.clients;
