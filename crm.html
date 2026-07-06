@@ -195,6 +195,8 @@
   @keyframes laterPulse { 0%,100%{box-shadow:0 0 0 0 rgba(124,77,255,0.5)} 50%{box-shadow:0 0 0 8px rgba(124,77,255,0)} }
   .later-pulse { animation: laterPulse 0.7s ease 2; }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -4086,12 +4088,20 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ GITHUB SYNC v17 ============
-const GH_OWNER = 'elina-dance';
-const GH_REPO = 'Elinasrm';
-const GH_FILE = 'crm-sync.json';
-const GH_TOKEN = [103,104,112,95,101,97,66,103,79,83,117,65,54,104,106,54,50,90,103,106,97,52,107,51,56,119,105,118,88,103,71,69,97,106,51,104,120,106,68,49].map(c=>String.fromCharCode(c)).join('');
+// ============ FIREBASE SYNC ============
+const FB_CONFIG = {
+  apiKey: "AIzaSyBo3gJb9XIuK_12ZSwTvQkk1XQ-tGI5nYY",
+  authDomain: "ocean-crm-c8bcf.firebaseapp.com",
+  databaseURL: "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "ocean-crm-c8bcf",
+  storageBucket: "ocean-crm-c8bcf.firebasestorage.app",
+  messagingSenderId: "177820718320",
+  appId: "1:177820718320:web:72fb30f15bee269cb25e35"
+};
+firebase.initializeApp(FB_CONFIG);
+const fbDB = firebase.database();
 let tgSyncTimer = null;
+let _fbListenerActive = false;
 
 function setTgBar(icon, text, color, showRetry) {
   const iconEl = document.getElementById('tg-sync-icon');
@@ -4103,54 +4113,33 @@ function setTgBar(icon, text, color, showRetry) {
 }
 async function retrySyncNow() {
   showToast('🔄 Повторная отправка...');
-  await ghSave();
+  await fbSave();
 }
 
-function fetchWithTimeout(url, opts, ms) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-async function ghSave() {
+async function fbSave() {
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
-    const payload = JSON.stringify({
+    const now = Date.now();
+    const payload = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
-      savedAt: new Date().toISOString()
-    });
-    const content = btoa(unescape(encodeURIComponent(payload)));
-    const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
-    let sha = null;
-    try {
-      const r = await fetchWithTimeout(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`, { headers: ghHdr }, 10000);
-      if (r.ok) { const d = await r.json(); sha = d.sha; }
-    } catch(e) {}
-    const body = { message: 'sync', content };
-    if (sha) body.sha = sha;
-    const resp = await fetchWithTimeout(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`, {
-      method: 'PUT', headers: ghHdr, body: JSON.stringify(body)
-    }, 25000);
-    if (resp.ok) {
-      const t = new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-      setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
-      updateSyncStatus('✅ ' + t);
-    } else {
-      const err = await resp.text();
-      console.log('GH save error:', resp.status, err);
-      setTgBar('⚠️', 'Ошибка ' + resp.status, '#ff8a80', true);
-      updateSyncStatus('⚠️ Ошибка');
-    }
+      savedAt: new Date(now).toISOString()
+    };
+    await fbDB.ref('crm').set(payload);
+    localStorage.setItem('ocean_last_save', now.toString());
+    const t = new Date(now).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+    setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
+    updateSyncStatus('✅ ' + t);
   } catch(e) {
-    console.log('GH save error:', e);
+    console.log('Firebase save error:', e);
     setTgBar('⚠️', 'Нет связи', '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
 }
 
-async function tgSave() { await ghSave(); }
+async function ghSave() { await fbSave(); }
+async function tgSave() { await fbSave(); }
 function confirmTgLoad() { const b = document.getElementById('tg-update-banner'); if (b) b.style.display = 'none'; }
 function dismissTgLoad() { const b = document.getElementById('tg-update-banner'); if (b) b.style.display = 'none'; }
 
@@ -4161,7 +4150,49 @@ function updateSyncStatus(text) {
 
 function scheduleTgSave() {
   if (tgSyncTimer) clearTimeout(tgSyncTimer);
-  tgSyncTimer = setTimeout(() => ghSave(), 5000);
+  tgSyncTimer = setTimeout(() => fbSave(), 3000);
+}
+
+function startFbListener() {
+  if (_fbListenerActive) return;
+  _fbListenerActive = true;
+  const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  setTgBar('🔄', 'Подключаюсь...', '#ffd54f', false);
+
+  fbDB.ref('crm').on('value', (snapshot) => {
+    try {
+      const cloud = snapshot.val();
+      if (!cloud || !cloud.clients?.length) {
+        // Firebase пуст — загружаем текущие данные
+        if (clients.length > 0) fbSave();
+        else setTgBar('📭', 'Нет данных', '#ffd54f', false);
+        return;
+      }
+      const cloudTime = new Date(cloud.savedAt).getTime();
+      const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+
+      if (_isPhone || cloudTime > localTime) {
+        clients = cloud.clients;
+        if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+        autoDedup(true);
+        localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+        localStorage.setItem('ocean_last_save', cloudTime.toString());
+        renderTabs(); renderCurrentTab();
+        const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        const src = _isPhone ? 'с Мака' : 'с телефона';
+        setTgBar('📥', 'Обновлено ' + src + ' · ' + t, '#a5d6a7', false);
+        updateSyncStatus('✅ ' + t);
+      } else {
+        // Локальные данные новее — сохраняем в Firebase
+        fbSave();
+      }
+    } catch(e) {
+      console.log('Firebase listener error:', e);
+    }
+  }, (error) => {
+    console.log('Firebase error:', error);
+    setTgBar('⚠️', 'Ошибка соединения', '#ff8a80', true);
+  });
 }
 // ============ AUTO DEDUP ============
 function autoDedup(silent) {
@@ -4377,43 +4408,28 @@ async function manualTgLoad() {
   showToast('🔄 Загружаю...');
   setTgBar('🔄', 'Загружаю...', '#ffd54f', false);
   try {
-    const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' };
-    const res = await fetchWithTimeout(
-      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}?t=` + Date.now(),
-      { headers: ghHdr }, 15000
-    );
-    if (!res.ok) {
-      if (res.status === 404) {
-        showToast('📭 Нет данных. Сначала открой CRM на Маке.');
-        setTgBar('📭', 'Нет данных', '#ffd54f', false);
-      } else {
-        showToast('❌ Ошибка ' + res.status);
-        setTgBar('⚠️', 'Ошибка ' + res.status, '#ff8a80', true);
-      }
-      return;
-    }
-    const d = await res.json();
-    const payload = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));
-    if (!payload.clients?.length) {
-      showToast('📭 Нет данных. Сначала открой CRM на Маке.');
+    const snapshot = await fbDB.ref('crm').once('value');
+    const cloud = snapshot.val();
+    if (!cloud || !cloud.clients?.length) {
+      showToast('📭 Нет данных в облаке');
       setTgBar('📭', 'Нет данных', '#ffd54f', false);
       return;
     }
-    const savedDate = new Date(payload.savedAt);
-    const dateStr = savedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-    const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    clients = payload.clients;
-    if (payload.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(payload.archive));
+    clients = cloud.clients;
+    if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
     autoDedup(true);
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+    localStorage.setItem('ocean_last_save', new Date(cloud.savedAt).getTime().toString());
     renderTabs();
     renderCurrentTab();
-    setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + payload.clients.length + ' кл.', '#a5d6a7', false);
+    const savedDate = new Date(cloud.savedAt);
+    const dateStr = savedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + clients.length + ' кл.', '#a5d6a7', false);
     updateSyncStatus('✅ Синк ' + timeStr);
-    showToast('✅ ' + payload.clients.length + ' клиентов · ' + dateStr + ' в ' + timeStr);
+    showToast('✅ ' + clients.length + ' клиентов · ' + dateStr + ' в ' + timeStr);
   } catch(e) {
-    const msg = e.name === 'AbortError' ? '⚠️ Таймаут' : '⚠️ Ошибка: ' + e.message;
-    showToast(msg);
+    showToast('⚠️ Ошибка: ' + e.message);
     setTgBar('⚠️', 'Ошибка соединения', '#ff8a80', true);
   }
 }
@@ -4443,40 +4459,10 @@ window.onerror = function(msg, src, line, col, err) {
   }
 })();
 load();
-autoDedup(true); // убрать дубли после загрузки из localStorage
+autoDedup(true);
 updateExportBadge();
 render();
-const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-setTimeout(async () => {
-  try {
-    const ghHdr = { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' };
-    const r = await fetchWithTimeout(
-      `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}?t=` + Date.now(),
-      { headers: ghHdr }, 10000
-    );
-    if (r.ok) {
-      const d = await r.json();
-      const cloud = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));
-      const cloudTime = new Date(cloud.savedAt).getTime();
-      const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
-      // Телефон всегда загружает из облака; Мак — только если облако новее
-      if (cloud.clients?.length > 0 && (_isPhone || cloudTime > localTime)) {
-        clients = cloud.clients;
-        if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
-        autoDedup(true);
-        localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-        localStorage.setItem('ocean_last_save', cloudTime.toString());
-        renderTabs(); renderCurrentTab();
-        const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        const src = _isPhone ? 'с Мака' : 'с телефона';
-        setTgBar('📥', 'Обновлено ' + src + ' · ' + t, '#a5d6a7', false);
-        updateSyncStatus('✅ Обновлено ' + t);
-        return;
-      }
-    }
-  } catch(e) {}
-  if (!_isPhone) await ghSave();
-}, 8000);
+setTimeout(() => startFbListener(), 2000);
 // Обзвон 23.06 — однократный импорт (после автосинка)
 setTimeout(function() {
   if (localStorage.getItem('patch_obzvon_20260623_v4')) return;
