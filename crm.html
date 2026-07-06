@@ -4917,6 +4917,39 @@ setTimeout(function() {
   setTimeout(() => fbSave(), 2000);
   localStorage.setItem('patch_mamochka_july6_v1', '1');
 }, 45000);
+
+// Новые номера для обзвона — 5-6 июля 2026 (от Ольги Промоутер с Навагинской)
+setTimeout(function() {
+  if (localStorage.getItem('patch_navaginskaya_july6_v1')) return;
+  function normP(p) { return (p||'').replace(/\D/g,'').slice(-10); }
+  function nextId() { return clients.length ? Math.max(...clients.map(c=>c.id))+1 : 1; }
+  function addIfNew(data) {
+    const ph = normP(data.phone||'');
+    if (ph && clients.some(c => normP(c.phone||'') === ph)) return;
+    clients.push(Object.assign({ id: nextId(), tasks:[], history:[], updatedAt: new Date().toISOString() }, data));
+  }
+
+  // Аурелия — 7-8 л., бабушка Ольга
+  addIfNew({ name:'Аурелия', phone:'89182054224', status:'new',
+    notes:'7-8 л. Бабушка Ольга. От Ольги Промоутер с Навагинской.' });
+
+  // Арина — 2,2 г., мама Анастасия
+  addIfNew({ name:'Арина', phone:'89631640000', status:'new',
+    notes:'2,2 г. Мама Анастасия. От Ольги Промоутер с Навагинской.' });
+
+  // Никалуна — 7 л., папа Максим, мама Вика
+  addIfNew({ name:'Никалуна', phone:'89384207772', status:'new',
+    notes:'7 л. Папа Максим, мама Вика. От Ольги Промоутер с Навагинской.' });
+
+  // Милана — 4 г., мама Кристина
+  addIfNew({ name:'Милана', phone:'89604967173', status:'new',
+    notes:'4 г. Мама Кристина. От Ольги Промоутер с Навагинской.' });
+
+  save(); renderTabs(); renderCurrentTab();
+  showToast('✅ Добавлены 4 новых клиента (Навагинская)');
+  setTimeout(() => fbSave(), 2000);
+  localStorage.setItem('patch_navaginskaya_july6_v1', '1');
+}, 48000);
 </script>
 </body>
 </html>
