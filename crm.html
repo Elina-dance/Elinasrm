@@ -3673,9 +3673,11 @@ function renderCalendar() {
   });
   const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.filter(c=>c.status==='trial'||c.status==='arrived').length,0);
 
-  // Извлечь имя ребёнка из строки вида "Маша 4 г. — мама Катя"
+  // Извлечь короткое имя ребёнка: "Маша 4 г. — мама Катя" → "Маша"
   function calChildName(name) {
-    return name.split(/\s*(?:—|-)\s*(?:мама|папа|бабушка|дедушка|тётя|дядя|бабуля)/i)[0].trim();
+    let s = name.split(/\s*(?:—|-)\s*(?:мама|папа|бабушка|дедушка|тётя|дядя|бабуля)/i)[0].trim();
+    s = s.replace(/\s+\d.*$/, '').trim(); // убираем возраст
+    return s.length > 13 ? s.slice(0, 12) + '…' : s;
   }
 
   const firstDow = new Date(year, month, 1).getDay(); // 0=Sun
@@ -3721,20 +3723,23 @@ function renderCalendar() {
     const grouped = {};
     trials.forEach(c=>{ const g=c.group||'Малыши'; if(!grouped[g]) grouped[g]=[]; grouped[g].push(c); });
 
-    html+=`<div onclick="calSelectDay(${day})" style="border-radius:8px;padding:3px 2px;min-height:56px;cursor:pointer;
+    // Собираем плоский список имён для показа (max 4, потом "+N")
+    const allInDay = CAL_GROUP_ORDER.flatMap(g => grouped[g]||[]);
+    const MAX_NAMES = 4;
+    const shown = allInDay.slice(0, MAX_NAMES);
+    const extra = allInDay.length - MAX_NAMES;
+
+    html+=`<div onclick="calSelectDay(${day})" style="border-radius:8px;padding:3px 2px;height:72px;overflow:hidden;cursor:pointer;
       background:${cellBg};border:2px solid ${cellBd};
-      transition:all 0.15s;-webkit-tap-highlight-color:transparent;">
+      transition:all 0.15s;-webkit-tap-highlight-color:transparent;box-sizing:border-box;">
       <div style="text-align:center;font-size:11px;font-weight:${isToday||isSel?800:600};
-        color:${isSel?'var(--wave)':isToday?'var(--orange)':isWknd?'var(--red)':'var(--text)'};margin-bottom:2px;">${day}</div>
-      ${CAL_GROUP_ORDER.filter(g=>grouped[g]).map(g=>{
-        const arr=grouped[g];
-        return `<div style="background:#b2ebf2;color:#006064;border-radius:3px;font-size:7px;font-weight:800;padding:1px 2px;margin-bottom:1px;text-align:center;line-height:1.3;">${g} ${arr.length}</div>`
-        + arr.map(c=>{
-            const nm=calChildName(c.name);
-            const bought=c.status==='bought';
-            return `<div style="background:${bought?'#fce4ec':'#e0f7fa'};color:${bought?'#c62828':'#00838f'};border-radius:3px;font-size:7px;font-weight:600;padding:1px 2px;margin-bottom:1px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</div>`;
-          }).join('');
+        color:${isSel?'var(--wave)':isToday?'var(--orange)':isWknd?'var(--red)':'var(--text)'};margin-bottom:2px;line-height:1.2;">${day}</div>
+      ${shown.map(c=>{
+        const nm = calChildName(c.name);
+        const bought = c.status==='bought';
+        return `<div style="background:${bought?'#fce4ec':'#e0f7fa'};color:${bought?'#c62828':'#00838f'};border-radius:3px;font-size:7.5px;font-weight:600;padding:1px 3px;margin-bottom:1px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nm}</div>`;
       }).join('')}
+      ${extra>0?`<div style="color:var(--muted);font-size:7px;font-weight:700;padding-left:2px;">+${extra}</div>`:''}
     </div>`;
   }
 
