@@ -384,6 +384,50 @@
   </div>
 </div>
 
+<!-- TRIAL BOOKING MODAL -->
+<div class="modal-overlay" id="trial-booking-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🎯 Записать на пробное</span>
+      <button class="btn-close" onclick="closeModal('trial-booking-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:#e0f7fa;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#00838f;font-weight:600;">
+        <strong id="trial-booking-name"></strong>
+      </div>
+      <div class="form-group">
+        <label>Дата и время пробного</label>
+        <input id="trial-booking-dt" type="datetime-local">
+      </div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Быстрый выбор дня:</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;">
+          <button onclick="setTrialDay(0)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Сегодня</button>
+          <button onclick="setTrialDay(1)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Завтра</button>
+          <button onclick="setTrialDay(2)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Послезавтра</button>
+          <button onclick="setTrialWeekday(1)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Пн</button>
+          <button onclick="setTrialWeekday(2)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Вт</button>
+          <button onclick="setTrialWeekday(3)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Ср</button>
+          <button onclick="setTrialWeekday(4)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Чт</button>
+          <button onclick="setTrialWeekday(5)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Пт</button>
+          <button onclick="setTrialWeekday(6)" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">Сб</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Время:</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+          <button onclick="setTrialTime('11:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">11:00</button>
+          <button onclick="setTrialTime('12:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">12:00</button>
+          <button onclick="setTrialTime('13:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">13:00</button>
+          <button onclick="setTrialTime('14:30')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">14:30</button>
+          <button onclick="setTrialTime('17:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">17:00</button>
+          <button onclick="setTrialTime('18:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">18:00</button>
+          <button onclick="setTrialTime('19:00')" style="background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:700;cursor:pointer;">19:00</button>
+        </div>
+      </div>
+      <button class="btn-save" onclick="saveTrialBooking()" style="background:#00acc1;">🎯 Записать на пробное</button>
+    </div>
+  </div>
+</div>
+
 <!-- MERGE DUPLICATES MODAL -->
 <div class="modal-overlay" id="merge-modal">
   <div class="modal">
@@ -1020,7 +1064,8 @@ const INITIAL_DATA = [
   {id:239,name:"Мира 5 л. — мама Анастасия",phone:"89186058009",group:"Малыши",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
   {id:240,name:"Ева 2,8 г. Ксюша 6 л. — мама Даша",phone:"89201114833",group:"Малыши",channel:"Обычное смс",status:"new",notes:"Два ребёнка: Ева 2,8 г. и Ксюша 6 л.",nextCall:"2026-06-23T09:00",history:[]},
   {id:241,name:"Агата 6 л. — мама Каролина",phone:"89821588091",group:"Младшие",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
-  {id:242,name:"Алиса 9 л. — мама Екатерина",phone:"89649849806",group:"Средние",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]}
+  {id:242,name:"Алиса 9 л. — мама Екатерина",phone:"89649849806",group:"Средние",channel:"Обычное смс",status:"new",notes:"",nextCall:"2026-06-23T09:00",history:[]},
+  {id:243,name:"Ева и Ника — мама Марина",phone:"",group:"Младшие",channel:"",trial:"2026-07-14T18:00",status:"trial",notes:"Записаны на пн 14 июля в 18:00.",nextCall:"2026-07-14T09:00",history:[{date:"08.07.26",result:"🎯 Записаны на пробное пн 14 июля в 18:00.",newStatus:"trial",nextCall:"2026-07-14T09:00"}]}
 ];
 
 // ============ STATE ============
@@ -1728,7 +1773,8 @@ function renderReminders() {
         </div>` : `
         <div style="border-top:1px solid var(--border);padding-top:10px;">
           <div style="display:flex;gap:8px;">
-            <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Записать итог</button>
+            <button onclick="openTrialModal(${c.id})" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🎯</button>
+            <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Итог</button>
             <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
             <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
           </div>
@@ -3525,6 +3571,74 @@ function saveCallback() {
   save(); updateExportBadge();
   closeModal('callback-modal');
   showToast(`🔄 Напомним ${dateRu}`);
+  if(activeTab==='obzvon') renderObzvon();
+  else render();
+}
+
+// ============ ЗАПИСЬ НА ПРОБНОЕ ============
+let _trialBookingId = null;
+
+function openTrialModal(id) {
+  const c = clients.find(x=>x.id===id); if(!c) return;
+  _trialBookingId = id;
+  document.getElementById('trial-booking-name').textContent = c.name;
+  // Предзаполнить: если уже есть дата пробного — её, иначе ближайший понедельник 18:00
+  let pre = c.trial || '';
+  if (!pre) {
+    const d = new Date();
+    const day = d.getDay(); // 0=вс,1=пн...
+    const daysToMon = day===0 ? 1 : (day===1 ? 7 : 8-day);
+    d.setDate(d.getDate() + daysToMon);
+    d.setHours(18,0,0,0);
+    pre = d.toISOString().slice(0,16);
+  }
+  document.getElementById('trial-booking-dt').value = pre;
+  document.getElementById('trial-booking-modal').classList.add('active');
+}
+
+function setTrialDay(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const cur = document.getElementById('trial-booking-dt').value;
+  const time = cur ? cur.slice(11) : '18:00';
+  document.getElementById('trial-booking-dt').value = d.toISOString().slice(0,10) + 'T' + time;
+}
+
+function setTrialWeekday(targetDay) { // 1=пн,2=вт,...,6=сб
+  const d = new Date();
+  const cur = d.getDay(); // 0=вс
+  let diff = targetDay - cur;
+  if (diff <= 0) diff += 7;
+  d.setDate(d.getDate() + diff);
+  const curVal = document.getElementById('trial-booking-dt').value;
+  const time = curVal ? curVal.slice(11) : '18:00';
+  document.getElementById('trial-booking-dt').value = d.toISOString().slice(0,10) + 'T' + time;
+}
+
+function setTrialTime(time) {
+  const cur = document.getElementById('trial-booking-dt').value;
+  const datePart = cur ? cur.slice(0,10) : new Date().toISOString().slice(0,10);
+  document.getElementById('trial-booking-dt').value = datePart + 'T' + time;
+}
+
+function saveTrialBooking() {
+  const dt = document.getElementById('trial-booking-dt').value;
+  if (!dt) { showToast('⚠️ Укажи дату и время пробного'); return; }
+  const idx = clients.findIndex(x=>x.id===_trialBookingId); if(idx<0) return;
+  const dateRu = fmtDT(dt);
+  clients[idx].trial = dt;
+  clients[idx].status = 'trial';
+  clients[idx].nextCall = dt.slice(0,10) + 'T09:00';
+  clients[idx].updatedAt = new Date().toISOString();
+  if(!clients[idx].history) clients[idx].history=[];
+  clients[idx].history.push({
+    date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
+    result: `🎯 Записались на пробное ${dateRu}`,
+    newStatus:'trial', nextCall: clients[idx].nextCall
+  });
+  save(); updateExportBadge();
+  closeModal('trial-booking-modal');
+  showToast(`🎯 Записаны на пробное ${dateRu}`);
   if(activeTab==='obzvon') renderObzvon();
   else render();
 }
