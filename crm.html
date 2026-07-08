@@ -1616,8 +1616,10 @@ function renderReminders() {
     .sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
   // Блок абонементов — вычисляем ДО early return, чтобы учесть в счётчике
   const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
+  // Новые ни разу не тронутые — всегда в напоминаниях пока статус не изменится
+  const newUntouched = clients.filter(c => c.status === 'new' && (!c.history || c.history.length === 0) && matchesSearch(c,q));
 
-  const totalToday = trialList.length + callList.length + abonEndToday.length;
+  const totalToday = trialList.length + callList.length + abonEndToday.length + newUntouched.length;
 
   let html = `<div class="remind-hero">
     <div class="date-big">🔔 Сегодня ${totalToday > 0 ? totalToday + ' задач' : ''}</div>
@@ -1782,6 +1784,42 @@ function renderReminders() {
             <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
           </div>
         </div>`}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── БЛОК 4: Новые ни разу не тронутые ──
+  if (newUntouched.length > 0) {
+    html += `<div style="margin-top:20px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:2px;background:linear-gradient(to right,#43a047,transparent);"></div>
+      <div style="background:#43a047;color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">🆕 Новые — не звонили (${newUntouched.length})</div>
+      <div style="flex:1;height:2px;background:linear-gradient(to left,#43a047,transparent);"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;">Останутся здесь пока не позвонишь и не изменишь статус</div>`;
+    newUntouched.forEach(c => {
+      html += `<div class="remind-card" style="border:2px solid #a5d6a7;background:#f1f8e9;">
+        <div class="remind-card-top">
+          <div class="remind-name">${c.name}</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">🆕 Новый</span>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
+          ${c.channel?`<span style="background:#e0f7fa;color:#00838f;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📣 ${c.channel}</span>`:''}
+        </div>
+        ${c.notes?`<div class="card-notes" style="margin-bottom:8px;">${c.notes}</div>`:''}
+        ${contactButtons(c, true, '')}
+        <div style="border-top:1px solid #c8e6c9;padding-top:10px;margin-top:4px;">
+          <div style="display:flex;gap:8px;">
+            <button onclick="openTrialModal(${c.id})" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🎯 На пробное</button>
+            <button onclick="openLogModal(${c.id})" style="flex:1;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;">✏️ Итог</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Позже</button>
+          </div>
+        </div>
       </div>`;
     });
     html += `</div>`;
