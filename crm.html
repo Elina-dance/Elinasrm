@@ -1072,7 +1072,7 @@ const INITIAL_DATA = [
 
 // ============ STATE ============
 let clients = [];
-let activeTab = 'all';
+let activeTab = localStorage.getItem('ocean_active_tab') || 'remind';
 let editingId = null;
 let loggingId = null;
 let selectedStatus = 'new';
@@ -1087,6 +1087,7 @@ const SENT_KEY = 'ocean_sent_reminders';
 
 function switchTab(tabId) {
   activeTab = tabId;
+  localStorage.setItem('ocean_active_tab', tabId);
   renderTabs();
   renderCurrentTab();
 }
