@@ -1299,6 +1299,12 @@ function copyFollowupMsg(id) {
   navigator.clipboard.writeText(buildFollowupMsg(c)).then(()=>showToast('✅ Сообщение скопировано!'));
 }
 
+function toggleArrivedSection() {
+  const key = 'arrived_section_collapsed';
+  localStorage.setItem(key, localStorage.getItem(key) === '1' ? '0' : '1');
+  renderCurrentTab();
+}
+
 // Быстро сменить статус прямо из напоминания
 function quickStatus(id, status, nextCallDays) {
   if (status === 'bought') { markAsBought(id); return; }
@@ -1385,6 +1391,8 @@ function renderReminders() {
     const realHistory = (c.history||[]).filter(h => h.result !== 'Клиент добавлен');
     return realHistory.length === 0;
   });
+  // Постоянный список: дошли на пробное, но не купили
+  const arrivedNoB = clients.filter(c => c.status === 'arrived' && matchesSearch(c, q));
 
   const totalToday = trialList.length + callList.length + abonEndToday.length + newUntouched.length;
 
@@ -1393,7 +1401,7 @@ function renderReminders() {
     <div class="date-sub">${todayStr}</div>
   </div>`;
 
-  if (!totalToday) {
+  if (!totalToday && !arrivedNoB.length) {
     html += `<div style="text-align:center;padding:50px 20px">
       <div style="font-size:52px;margin-bottom:12px">🌊</div>
       <p style="color:var(--muted);font-size:14px;line-height:1.7">На сегодня задач нет.<br>Можно выдохнуть 😊</p>
@@ -1586,6 +1594,52 @@ function renderReminders() {
             <button onclick="openLogModal(${c.id})" style="flex:1;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;">✏️ Итог</button>
             <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Позже</button>
           </div>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── БЛОК 5: Дошли но не купили ──
+  if (arrivedNoB.length > 0) {
+    const isCollapsed = localStorage.getItem('arrived_section_collapsed') === '1';
+    html += `<div style="margin-top:20px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="toggleArrivedSection()">
+        <div style="flex:1;height:2px;background:linear-gradient(to right,var(--green),transparent);"></div>
+        <div style="background:var(--green);color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">👣 Дошли — не купили (${arrivedNoB.length})</div>
+        <div style="flex:1;height:2px;background:linear-gradient(to left,var(--green),transparent);"></div>
+        <span style="font-size:16px;color:var(--green);padding-left:4px;">${isCollapsed ? '▼' : '▲'}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;margin-bottom:10px;text-align:center;">Позвони и пригласи купить абонемент</div>
+    </div>
+    <div id="arrived-no-buy-list" style="${isCollapsed ? 'display:none' : ''}">`;
+    arrivedNoB.forEach(c => {
+      const trialStr = c.trial ? new Date(c.trial).toLocaleDateString('ru-RU',{day:'2-digit',month:'long'}) + ' в ' + fmtTime(c.trial) : '—';
+      const msg = buildFollowupMsg(c);
+      html += `<div class="remind-card" style="border:2px solid #a5d6a7;background:#f1f8e9;">
+        <div class="remind-card-top">
+          <div class="remind-name">${c.name}</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="background:var(--green-bg);color:var(--green);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">👣 Дошли</span>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
+          ${c.trial?`<span style="background:var(--green-bg);color:var(--green);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📅 Пробное: ${trialStr}</span>`:''}
+        </div>
+        ${c.notes?`<div class="card-notes" style="margin-bottom:8px;">${c.notes}</div>`:''}
+        <div class="msg-box" style="margin-bottom:8px;">${msg}</div>
+        ${contactButtons(c, true, msg)}
+        <div style="border-top:1px solid #c8e6c9;padding-top:10px;margin-top:4px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перезвонить</button>
+            <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
+          </div>
+          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
         </div>
       </div>`;
     });
@@ -5119,6 +5173,43 @@ setTimeout(function() {
   }
   localStorage.setItem('patch_fix_schedule_july9_v2', '1');
 }, 57000);
+
+// ============ ПАТЧ v3: очистка артефактов вторника + исправление группы ============
+// Удаляет из localStorage «пробных» клиентов, ошибочно поставленных патчем v1 на 7 июля.
+// Также исправляет клиентов с группой «Малыши» на пятницу 19:00 → «Средние».
+setTimeout(function() {
+  if (localStorage.getItem('patch_fix_schedule_july9_v3')) return;
+
+  var today = new Date(); today.setHours(0,0,0,0);
+  var fixed3 = 0;
+
+  clients.forEach(function(c) {
+    // Очищаем прошедшие trial-даты у клиентов со статусом 'trial'
+    // (включая артефакты 7 июля от патча v1)
+    if (c.status === 'trial' && c.trial) {
+      var dt = new Date(c.trial);
+      if (dt < today) {
+        c.trial = '';
+        fixed3++;
+      }
+    }
+    // Исправляем группу: Малыши на Пт 19:00 → Средние (Пт 19:00 — слот Средних)
+    if (c.group === 'Малыши' && c.trial) {
+      var dt2 = new Date(c.trial);
+      if (dt2.getDay() === 5 && dt2.getHours() === 19) {
+        c.group = 'Средние';
+        fixed3++;
+      }
+    }
+  });
+
+  if (fixed3 > 0) {
+    save(); renderTabs(); renderCurrentTab();
+    showToast('🔧 Исправлено ' + fixed3 + ' записей');
+    setTimeout(function(){ fbSave(); }, 3000);
+  }
+  localStorage.setItem('patch_fix_schedule_july9_v3', '1');
+}, 59000);
 </script>
 </body>
 </html>
