@@ -731,6 +731,31 @@
   </div>
 </div>
 
+<!-- MOVE TRIAL MODAL -->
+<div class="modal-overlay" id="move-trial-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📅 Перенести пробное</span>
+      <button class="btn-close" onclick="closeModal('move-trial-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:var(--foam);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--wave);font-weight:600;">
+        <strong id="move-trial-client-name"></strong>
+      </div>
+      <input type="hidden" id="move-trial-client-id">
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">Ближайшие даты по расписанию:</div>
+        <div id="move-trial-dates" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+      </div>
+      <div class="form-group">
+        <label>Или выбери другую дату и время</label>
+        <input id="move-trial-custom" type="datetime-local">
+      </div>
+      <button class="btn-save" onclick="saveMoveTrial()">📅 Перенести</button>
+    </div>
+  </div>
+</div>
+
 <!-- IMPORT MODAL -->
 <div class="modal-overlay" id="import-modal">
   <div class="modal">
@@ -3442,17 +3467,17 @@ function renderCalendar() {
   const year = calendarYear, month = calendarMonth;
   const monthName = new Date(year, month, 1).toLocaleDateString('ru-RU', { month:'long', year:'numeric' });
 
-  // trial map: day → [clients] — включаем trial, arrived, bought (у кого есть дата пробного)
+  // trial map: day → [clients] — только клиенты со статусом 'trial' (предстоящие пробные)
   const trialMap = {};
   clients.forEach(c => {
-    if (!c.trial) return;
+    if (!c.trial || c.status !== 'trial') return;
     const d = new Date(c.trial);
     if (d.getFullYear()!==year || d.getMonth()!==month) return;
     const day = d.getDate();
     if (!trialMap[day]) trialMap[day] = [];
     trialMap[day].push(c);
   });
-  const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.filter(c=>c.status==='trial'||c.status==='arrived').length,0);
+  const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.length, 0);
 
   // Извлечь короткое имя ребёнка: "Маша 4 г. — мама Катя" → "Маша"
   function calChildName(name) {
@@ -3510,8 +3535,8 @@ function renderCalendar() {
     const isSel = selectedCalDay===day;
     const dow = (startOffset+day-1)%7;
     const isWknd = dow>=5;
-    const hasTrial = trials.some(c=>c.status==='trial'||c.status==='arrived');
-    const hasBought = trials.some(c=>c.status==='bought');
+    const hasTrial = trials.length > 0;
+    const hasBought = false;
     const cellBg = isSel?'#dbeafe':isToday?'#fff8e1':hasTrial?'#e0f7fa':hasBought?'#fce4ec':'#fafafa';
     const cellBd = isSel?'var(--wave)':isToday?'var(--yellow)':hasTrial?'#00acc1':hasBought?'var(--pink)':'transparent';
 
@@ -3596,6 +3621,7 @@ function renderCalendar() {
               <button onclick="quickStatus(${c.id},'arrived',1);renderCalendar();" style="flex:1;min-width:70px;background:#e8f5e9;color:var(--green);border:1.5px solid var(--green);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">👣 Пришёл</button>
               <button onclick="quickStatus(${c.id},'bought',0);renderCalendar();" style="flex:1;min-width:70px;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🩷 Купили</button>
               <button onclick="openLogModal(${c.id});activeTab='calendar';" style="flex:1;min-width:70px;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Итог</button>
+              <button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>
             </div>
           </div>`;
         });
@@ -3624,6 +3650,69 @@ function calSelectDay(day) {
   if (selectedCalDay!==null) {
     setTimeout(()=>{ const el=document.getElementById('content'); if(el) el.scrollTop=el.scrollHeight; },50);
   }
+}
+
+// ============ ПЕРЕНОС ПРОБНОГО ============
+const MOVE_SCH = {
+  'Малыши':    [{wd:2,h:18,m:0,label:'Вт 18:00'},{wd:6,h:12,m:0,label:'Сб 12:00'}],
+  'Младшие':   [{wd:1,h:18,m:0,label:'Пн 18:00'},{wd:3,h:18,m:0,label:'Ср 18:00'},{wd:5,h:18,m:0,label:'Пт 18:00'},{wd:6,h:13,m:0,label:'Сб 13:00'}],
+  'Средние':   [{wd:5,h:19,m:0,label:'Пт 19:00'}],
+  'Подростки': [{wd:3,h:19,m:0,label:'Ср 19:00'},{wd:6,h:18,m:0,label:'Сб 18:00'}],
+};
+const DAYS_RU_CAL = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+const MONTHS_RU_CAL = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+
+function openMoveTrial(id) {
+  const c = clients.find(cl => cl.id === id);
+  if (!c) return;
+  document.getElementById('move-trial-client-name').textContent = c.name;
+  document.getElementById('move-trial-client-id').value = id;
+  if (c.trial) document.getElementById('move-trial-custom').value = c.trial;
+
+  const slots = MOVE_SCH[c.group] || [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dates = [];
+  for (let i = 0; i < 28 && dates.length < 8; i++) {
+    const d = new Date(today); d.setDate(d.getDate() + i);
+    slots.forEach(s => {
+      if (d.getDay() === s.wd && dates.length < 8) {
+        const dt = new Date(d); dt.setHours(s.h, s.m, 0, 0);
+        dates.push({ dt, label: s.label });
+      }
+    });
+  }
+
+  let html = '';
+  if (!dates.length) {
+    html = '<div style="color:var(--muted);font-size:13px;grid-column:span 2;">Укажите дату вручную.</div>';
+  } else {
+    dates.forEach(({dt, label}) => {
+      const iso = dt.toISOString().slice(0,16);
+      const dn = DAYS_RU_CAL[dt.getDay()];
+      const dm = `${dt.getDate()} ${MONTHS_RU_CAL[dt.getMonth()]}`;
+      html += `<button type="button" onclick="setMoveTrial('${iso}')" style="background:var(--foam);color:var(--wave);border:1.5px solid var(--wave);border-radius:10px;padding:10px 8px;font-size:12px;font-weight:700;cursor:pointer;text-align:center;line-height:1.4;"><div style="font-weight:800;">${dn} ${dm}</div><div style="font-size:11px;opacity:0.75;">${label}</div></button>`;
+    });
+  }
+  document.getElementById('move-trial-dates').innerHTML = html;
+  document.getElementById('move-trial-modal').classList.add('open');
+}
+
+function setMoveTrial(iso) {
+  document.getElementById('move-trial-custom').value = iso;
+}
+
+function saveMoveTrial() {
+  const id = parseInt(document.getElementById('move-trial-client-id').value);
+  const newDate = document.getElementById('move-trial-custom').value;
+  if (!newDate) { showToast('⚠️ Выбери дату'); return; }
+  const c = clients.find(cl => cl.id === id);
+  if (!c) return;
+  c.trial = newDate;
+  save();
+  showToast('📅 Дата пробного перенесена');
+  setTimeout(() => fbSave(), 2000);
+  closeModal('move-trial-modal');
+  renderCalendar();
 }
 
 // ============ ПРОБНЫЕ ============
