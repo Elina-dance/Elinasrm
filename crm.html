@@ -3467,17 +3467,27 @@ function renderCalendar() {
   const year = calendarYear, month = calendarMonth;
   const monthName = new Date(year, month, 1).toLocaleDateString('ru-RU', { month:'long', year:'numeric' });
 
-  // trial map: day → [clients] — только клиенты со статусом 'trial' (предстоящие пробные)
+  // trial map: day → [clients]
+  // Прошедшие дни: кто пришёл (arrived/bought) — чтобы видеть историю
+  // Сегодня и будущие дни: кто записан (trial) — предстоящие пробные
+  const todayNorm = new Date(); todayNorm.setHours(0,0,0,0);
   const trialMap = {};
   clients.forEach(c => {
-    if (!c.trial || c.status !== 'trial') return;
+    if (!c.trial) return;
     const d = new Date(c.trial);
     if (d.getFullYear()!==year || d.getMonth()!==month) return;
+    const dNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const isPast = dNorm < todayNorm;
+    if (isPast) {
+      if (c.status !== 'arrived' && c.status !== 'bought') return;
+    } else {
+      if (c.status !== 'trial') return;
+    }
     const day = d.getDate();
     if (!trialMap[day]) trialMap[day] = [];
     trialMap[day].push(c);
   });
-  const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.length, 0);
+  const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.filter(c=>c.status==='trial').length, 0);
 
   // Извлечь короткое имя ребёнка: "Маша 4 г. — мама Катя" → "Маша"
   function calChildName(name) {
@@ -3535,10 +3545,10 @@ function renderCalendar() {
     const isSel = selectedCalDay===day;
     const dow = (startOffset+day-1)%7;
     const isWknd = dow>=5;
-    const hasTrial = trials.length > 0;
-    const hasBought = false;
-    const cellBg = isSel?'#dbeafe':isToday?'#fff8e1':hasTrial?'#e0f7fa':hasBought?'#fce4ec':'#fafafa';
-    const cellBd = isSel?'var(--wave)':isToday?'var(--yellow)':hasTrial?'#00acc1':hasBought?'var(--pink)':'transparent';
+    const hasTrial = trials.some(c=>c.status==='trial');
+    const hasArrived = trials.some(c=>c.status==='arrived'||c.status==='bought');
+    const cellBg = isSel?'#dbeafe':isToday?'#fff8e1':hasTrial?'#e0f7fa':hasArrived?'#e8f5e9':'#fafafa';
+    const cellBd = isSel?'var(--wave)':isToday?'var(--yellow)':hasTrial?'#00acc1':hasArrived?'var(--green)':'transparent';
 
     // Группируем по реальному названию группы
     const groupedActual = {};
@@ -3556,10 +3566,10 @@ function renderCalendar() {
       ${dayGroups.map(g=>{
         const gc=calGroupStyle(g);
         const gcs=groupedActual[g];
-        const allBought=gcs.every(c=>c.status==='bought');
-        const bg=allBought?'#fce4ec':gc.bg;
-        const clr=allBought?'#c62828':gc.color;
-        const names=gcs.map(c=>(c.status==='bought'&&!allBought?'🩷':'')+calChildName(c.name)).join(', ');
+        const allArrived=gcs.every(c=>c.status==='arrived'||c.status==='bought');
+        const bg=allArrived?'#e8f5e9':gc.bg;
+        const clr=allArrived?'#2e7d32':gc.color;
+        const names=gcs.map(c=>(c.status==='arrived'?'✓':c.status==='bought'?'🩷':'')+calChildName(c.name)).join(', ');
         const cnt=gcs.length;
         return `<div style="background:${bg};color:${clr};border-radius:3px;font-size:7px;font-weight:700;padding:1px 3px;margin-bottom:1px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${calGroupShort(g)}${cnt>1?' ('+cnt+')':''}: ${names}</div>`;
       }).join('')}
@@ -3571,6 +3581,7 @@ function renderCalendar() {
   // Легенда
   html+=`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">
     <div style="background:#e0f7fa;color:#00838f;border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;">🎯 Пробное</div>
+    <div style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;">✓ Пришли</div>
     <div style="background:#fce4ec;color:#c62828;border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;">🩷 Купили</div>
     ${CAL_GROUP_ORDER.map(g=>{ const gc=CAL_GROUPS[g]; return `<div style="background:${gc.bg};color:${gc.color};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;">${g}</div>`; }).join('')}
   </div>`;
@@ -3580,21 +3591,30 @@ function renderCalendar() {
     const dayClients = trialMap[selectedCalDay]||[];
     const selDate = new Date(year, month, selectedCalDay);
     const dateStr = selDate.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
+    const selDayNorm = new Date(year, month, selectedCalDay);
+    const isDayPast = selDayNorm < todayNorm;
 
     if (!dayClients.length) {
+      const emptyMsg = isDayPast ? 'Данных о пробных нет' : 'Нет пробных занятий';
       html+=`<div style="background:white;border-radius:14px;padding:24px 16px;text-align:center;color:var(--muted);box-shadow:0 1px 6px rgba(0,0,0,0.07);">
-        <div style="font-size:28px;margin-bottom:8px;">📅</div>
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${dateStr}</div>
-        <div style="font-size:12px;margin-top:5px;">Нет пробных занятий</div>
+        <div style="font-size:28px;margin-bottom:8px;">${isDayPast?'📋':'📅'}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);text-transform:capitalize;">${dateStr}</div>
+        <div style="font-size:12px;margin-top:5px;">${emptyMsg}</div>
       </div>`;
     } else {
       const byGroup = {};
       dayClients.forEach(c=>{ const g=c.group||'Малыши'; if(!byGroup[g]) byGroup[g]=[]; byGroup[g].push(c); });
-      // Sort within each group by trial time
       Object.values(byGroup).forEach(arr=>arr.sort((a,b)=>new Date(a.trial)-new Date(b.trial)));
 
+      const arrivedCnt = dayClients.filter(c=>c.status==='arrived'||c.status==='bought').length;
+      const trialCnt = dayClients.filter(c=>c.status==='trial').length;
+      const titleIcon = isDayPast ? '✅' : '📅';
+      const titleSuffix = isDayPast
+        ? `${arrivedCnt} пришли`
+        : `${trialCnt} пробных`;
+
       html+=`<div style="background:white;border-radius:14px;padding:14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);">
-        <div style="font-size:14px;font-weight:800;color:var(--ocean);margin-bottom:14px;text-transform:capitalize;">📅 ${dateStr} · ${dayClients.length} пробных</div>`;
+        <div style="font-size:14px;font-weight:800;color:var(--ocean);margin-bottom:14px;text-transform:capitalize;">${titleIcon} ${dateStr} · ${titleSuffix}</div>`;
 
       CAL_GROUP_ORDER.forEach(g=>{
         if (!byGroup[g]) return;
@@ -3606,22 +3626,26 @@ function renderCalendar() {
           const timeStr = c.trial ? new Date(c.trial).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}) : '';
           const sSt = STATUS_MAP[c.status];
           const trialMsg = buildTrialMsg(c);
+          const isArrived = c.status === 'arrived';
           const isBought = c.status === 'bought';
-          const cardBg = isBought ? '#fff5f7' : '#fafafa';
-          const cardBd = isBought ? 'var(--pink)' : '#00acc1';
+          const cardBg = isBought ? '#fff5f7' : isArrived ? '#f1f8e9' : '#fafafa';
+          const cardBd = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : '#00acc1';
+          const timeIcon = isBought ? '🩷' : isArrived ? '✓' : '⏰';
+          const timeBg = isBought ? 'var(--pink-bg)' : isArrived ? '#e8f5e9' : '#e0f7fa';
+          const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : '#00838f';
           html+=`<div style="background:${cardBg};border-radius:10px;padding:10px 12px;margin-bottom:7px;border-left:3px solid ${cardBd};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
               <div style="font-weight:700;font-size:13px;flex:1;padding-right:6px;">${c.name}</div>
-              ${timeStr?`<div style="background:${isBought?'var(--pink-bg)':'#e0f7fa'};color:${isBought?'var(--pink)':'#00838f'};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;">${isBought?'🩷':'⏰'} ${timeStr}</div>`:''}
+              ${timeStr?`<div style="background:${timeBg};color:${timeClr};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;">${timeIcon} ${timeStr}</div>`:''}
             </div>
             ${sSt?`<div style="display:inline-block;${sSt.pill};border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;margin-bottom:5px;">${sSt.label}</div>`:''}
             ${c.notes?`<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:7px;background:white;border-radius:6px;padding:6px 8px;">${c.notes}</div>`:''}
             ${contactButtons(c, true, trialMsg)}
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
-              <button onclick="quickStatus(${c.id},'arrived',1);renderCalendar();" style="flex:1;min-width:70px;background:#e8f5e9;color:var(--green);border:1.5px solid var(--green);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">👣 Пришёл</button>
-              <button onclick="quickStatus(${c.id},'bought',0);renderCalendar();" style="flex:1;min-width:70px;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🩷 Купили</button>
+              ${!isArrived&&!isBought?`<button onclick="quickStatus(${c.id},'arrived',1);renderCalendar();" style="flex:1;min-width:70px;background:#e8f5e9;color:var(--green);border:1.5px solid var(--green);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">👣 Пришёл</button>`:''}
+              ${!isBought?`<button onclick="quickStatus(${c.id},'bought',0);renderCalendar();" style="flex:1;min-width:70px;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🩷 Купили</button>`:''}
               <button onclick="openLogModal(${c.id});activeTab='calendar';" style="flex:1;min-width:70px;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Итог</button>
-              <button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>
+              ${c.status==='trial'?`<button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>`:''}
             </div>
           </div>`;
         });
