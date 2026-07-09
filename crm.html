@@ -195,8 +195,7 @@
   @keyframes laterPulse { 0%,100%{box-shadow:0 0 0 0 rgba(124,77,255,0.5)} 50%{box-shadow:0 0 0 8px rgba(124,77,255,0)} }
   .later-pulse { animation: laterPulse 0.7s ease 2; }
 </style>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<!-- Firebase SDK загружается асинхронно чтобы не блокировать страницу -->
 </head>
 <body>
 
@@ -4297,11 +4296,33 @@ const FB_CONFIG = {
   messagingSenderId: "177820718320",
   appId: "1:177820718320:web:72fb30f15bee269cb25e35"
 };
-firebase.initializeApp(FB_CONFIG);
-const fbDB = firebase.database();
+let fbDB = null;
 let tgSyncTimer = null;
 let _fbListenerActive = false;
 let _fbConnected = false;
+
+// Асинхронная загрузка Firebase — страница не ждёт
+function loadFirebaseAsync() {
+  const s1 = document.createElement('script');
+  s1.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
+  s1.onload = function() {
+    const s2 = document.createElement('script');
+    s2.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js';
+    s2.onload = function() {
+      try {
+        firebase.initializeApp(FB_CONFIG);
+        fbDB = firebase.database();
+        startFbListener();
+      } catch(e) {
+        setTgBar('⚠️', 'Ошибка Firebase', '#ff8a80', true);
+      }
+    };
+    s2.onerror = function() { setTgBar('📴', 'Firebase недоступен', '#ff8a80', true); };
+    document.head.appendChild(s2);
+  };
+  s1.onerror = function() { setTgBar('📴', 'Firebase недоступен', '#ff8a80', true); };
+  document.head.appendChild(s1);
+}
 
 function setTgBar(icon, text, color, showRetry) {
   const iconEl = document.getElementById('tg-sync-icon');
@@ -4317,6 +4338,7 @@ async function retrySyncNow() {
 }
 
 async function fbSave() {
+  if (!fbDB) { showToast('⚠️ Firebase ещё не готов'); return; }
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
@@ -4681,7 +4703,7 @@ load();
 autoDedup(true);
 updateExportBadge();
 render();
-setTimeout(() => startFbListener(), 2000);
+setTimeout(() => loadFirebaseAsync(), 500);
 // Обзвон 23.06 — однократный импорт (после автосинка)
 setTimeout(function() {
   if (localStorage.getItem('patch_obzvon_20260623_v4')) return;
