@@ -4023,22 +4023,12 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
   el.addEventListener('click',e=>{if(e.target===el) el.classList.remove('open');});
 });
 
-// ============ FIREBASE SYNC ============
-const FB_CONFIG = {
-  apiKey: "AIzaSyBo3gJb9XIuK_12ZSwTvQkk1XQ-tGI5nYY",
-  authDomain: "ocean-crm-c8bcf.firebaseapp.com",
-  databaseURL: "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "ocean-crm-c8bcf",
-  storageBucket: "ocean-crm-c8bcf.firebasestorage.app",
-  messagingSenderId: "177820718320",
-  appId: "1:177820718320:web:72fb30f15bee269cb25e35"
-};
-let fbDB = null;
+// ============ FIREBASE REST API (без SDK — нет зависаний) ============
+const FB_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json';
 let tgSyncTimer = null;
-let _fbListenerActive = false;
 let _fbConnected = false;
+let _fbSSE = null;
 
-// Асинхронная загрузка Firebase — страница не ждёт
 function _fbOfflineFallback(reason) {
   setTgBar('📴', reason || 'Офлайн — локальные данные', '#ff8a80', true);
   if (clients.length === 0) {
@@ -4048,26 +4038,69 @@ function _fbOfflineFallback(reason) {
   renderCurrentTab();
 }
 
-function loadFirebaseAsync() {
-  const s1 = document.createElement('script');
-  s1.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
-  s1.onload = function() {
-    const s2 = document.createElement('script');
-    s2.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js';
-    s2.onload = function() {
+function _applyCloudData(cloud) {
+  if (!cloud || !cloud.clients?.length) return false;
+  const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const cloudTime = new Date(cloud.savedAt).getTime();
+  const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
+  if (tgSyncTimer && !_isPhone) return false;
+  const cloudHasMore = cloud.clients.length > clients.length;
+  if (_isPhone || cloudTime > localTime || cloudHasMore) {
+    clients = cloud.clients;
+    if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+    autoDedup(true);
+    localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+    localStorage.setItem('ocean_last_save', cloudTime.toString());
+    renderTabs(); renderCurrentTab();
+    const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+    const src = _isPhone ? 'с Мака' : 'с телефона';
+    setTgBar('📥', 'Обновлено ' + src + ' · ' + t, '#a5d6a7', false);
+    updateSyncStatus('✅ ' + t);
+    return true;
+  }
+  return false;
+}
+
+async function loadFromFirebase() {
+  if (_fbConnected) return;
+  setTgBar('🔄', 'Подключаюсь...', '#ffd54f', false);
+  const fbTimeout = setTimeout(() => {
+    if (!_fbConnected) _fbOfflineFallback();
+  }, 8000);
+  try {
+    const resp = await fetch(FB_URL);
+    clearTimeout(fbTimeout);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const cloud = await resp.json();
+    _fbConnected = true;
+    if (!cloud || !cloud.clients?.length) {
+      if (clients.length > 0) fbSave();
+      else setTgBar('📭', 'Нет данных', '#ffd54f', false);
+    } else {
+      if (!_applyCloudData(cloud)) fbSave();
+    }
+    startSSE();
+  } catch(e) {
+    clearTimeout(fbTimeout);
+    _fbOfflineFallback('Нет связи — локальные данные');
+  }
+}
+
+function startSSE() {
+  if (_fbSSE) return;
+  try {
+    _fbSSE = new EventSource(FB_URL);
+    _fbSSE.addEventListener('put', function(e) {
       try {
-        firebase.initializeApp(FB_CONFIG);
-        fbDB = firebase.database();
-        startFbListener();
-      } catch(e) {
-        _fbOfflineFallback('Ошибка Firebase — локальные данные');
-      }
+        const msg = JSON.parse(e.data);
+        if (msg && msg.data) _applyCloudData(msg.data);
+      } catch(ex) {}
+    });
+    _fbSSE.onerror = function() {
+      _fbSSE.close(); _fbSSE = null;
+      setTimeout(startSSE, 30000);
     };
-    s2.onerror = function() { _fbOfflineFallback('Firebase недоступен — локальные данные'); };
-    document.head.appendChild(s2);
-  };
-  s1.onerror = function() { _fbOfflineFallback('Firebase недоступен — локальные данные'); };
-  document.head.appendChild(s1);
+  } catch(e) {}
 }
 
 function setTgBar(icon, text, color, showRetry) {
@@ -4079,32 +4112,28 @@ function setTgBar(icon, text, color, showRetry) {
   if (retryBtn) retryBtn.style.display = showRetry ? 'inline-block' : 'none';
 }
 async function retrySyncNow() {
-  if (!fbDB) {
-    // Firebase не подключён — попробуем переподключиться
-    _fbListenerActive = false;
-    showToast('🔄 Переподключаюсь...');
-    loadFirebaseAsync();
-    return;
-  }
-  // Firebase подключён — загружаем свежие данные с сервера
-  await manualTgLoad();
+  _fbConnected = false;
+  showToast('🔄 Переподключаюсь...');
+  await loadFromFirebase();
 }
 
 async function fbSave() {
-  if (!fbDB) { showToast('⚠️ Firebase ещё не готов'); return; }
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
     const now = Date.now();
-    // Ставим метку ДО записи в Firebase — иначе listener успевает сработать
-    // раньше и видит cloudTime > localTime, перезаписывая свежие данные
     localStorage.setItem('ocean_last_save', now.toString());
     const payload = {
       clients,
       archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
       savedAt: new Date(now).toISOString()
     };
-    await fbDB.ref('crm').set(payload);
+    const resp = await fetch(FB_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const t = new Date(now).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
     updateSyncStatus('✅ ' + t);
@@ -4130,65 +4159,6 @@ function scheduleTgSave() {
   tgSyncTimer = setTimeout(() => fbSave(), 3000);
 }
 
-function startFbListener() {
-  if (_fbListenerActive) return;
-  _fbListenerActive = true;
-  const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  setTgBar('🔄', 'Подключаюсь...', '#ffd54f', false);
-
-  // Таймаут — если Firebase не ответил за 6 секунд, работаем офлайн
-  const fbTimeout = setTimeout(() => {
-    if (!_fbConnected) {
-      setTgBar('📴', 'Офлайн — локальные данные', '#ff8a80', true);
-      if (clients.length === 0) {
-        clients = JSON.parse(localStorage.getItem('ocean_crm_v3') || '[]');
-      }
-      renderTabs(); renderCurrentTab();
-    }
-  }, 6000);
-
-  fbDB.ref('crm').on('value', (snapshot) => {
-    clearTimeout(fbTimeout);
-    _fbConnected = true;
-    try {
-      const cloud = snapshot.val();
-      if (!cloud || !cloud.clients?.length) {
-        // Firebase пуст — загружаем текущие данные
-        if (clients.length > 0) fbSave();
-        else setTgBar('📭', 'Нет данных', '#ffd54f', false);
-        return;
-      }
-      const cloudTime = new Date(cloud.savedAt).getTime();
-      const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
-
-      // Если есть несохранённые локальные изменения (таймер ещё тикает) —
-      // никогда не перезаписываем: локальные данные всегда свежее
-      if (tgSyncTimer && !_isPhone) return;
-
-      const cloudHasMore = cloud.clients.length > clients.length;
-      if (_isPhone || cloudTime > localTime || cloudHasMore) {
-        clients = cloud.clients;
-        if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
-        autoDedup(true);
-        localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-        localStorage.setItem('ocean_last_save', cloudTime.toString());
-        renderTabs(); renderCurrentTab();
-        const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        const src = _isPhone ? 'с Мака' : 'с телефона';
-        setTgBar('📥', 'Обновлено ' + src + ' · ' + t, '#a5d6a7', false);
-        updateSyncStatus('✅ ' + t);
-      } else {
-        // Локальные данные новее — сохраняем в Firebase
-        fbSave();
-      }
-    } catch(e) {
-      console.log('Firebase listener error:', e);
-    }
-  }, (error) => {
-    console.log('Firebase error:', error);
-    setTgBar('⚠️', 'Ошибка соединения', '#ff8a80', true);
-  });
-}
 // ============ AUTO DEDUP ============
 function autoDedup(silent) {
   function normP(p) { return (p||'').replace(/\D/g,'').replace(/^[78]/,'').slice(-10); }
@@ -4400,17 +4370,12 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
-  if (!fbDB) {
-    showToast('⏳ Firebase ещё не готов — подождите секунду');
-    _fbListenerActive = false;
-    loadFirebaseAsync();
-    return;
-  }
   showToast('🔄 Загружаю...');
   setTgBar('🔄', 'Загружаю...', '#ffd54f', false);
   try {
-    const snapshot = await fbDB.ref('crm').once('value');
-    const cloud = snapshot.val();
+    const resp = await fetch(FB_URL);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const cloud = await resp.json();
     if (!cloud || !cloud.clients?.length) {
       showToast('📭 Нет данных в облаке');
       setTgBar('📭', 'Нет данных', '#ffd54f', false);
@@ -4428,6 +4393,7 @@ async function manualTgLoad() {
     const timeStr = savedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     setTgBar('✅', 'Загружено · ' + dateStr + ' ' + timeStr + ' · ' + clients.length + ' кл.', '#a5d6a7', false);
     updateSyncStatus('✅ Синк ' + timeStr);
+    _fbConnected = true;
     showToast('✅ ' + clients.length + ' клиентов · ' + dateStr + ' в ' + timeStr);
   } catch(e) {
     showToast('⚠️ Ошибка: ' + e.message);
@@ -4463,7 +4429,7 @@ load();
 autoDedup(true);
 updateExportBadge();
 render();
-setTimeout(() => loadFirebaseAsync(), 500);
+setTimeout(() => loadFromFirebase(), 500);
 // Обзвон 23.06 — однократный импорт (после автосинка)
 setTimeout(function() {
   if (localStorage.getItem('patch_obzvon_20260623_v4')) return;
