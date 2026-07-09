@@ -4040,12 +4040,15 @@ function _fbOfflineFallback(reason) {
 
 function _applyCloudData(cloud) {
   if (!cloud || !cloud.clients?.length) return false;
-  const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   const cloudTime = new Date(cloud.savedAt).getTime();
   const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
-  if (tgSyncTimer && !_isPhone) return false;
-  const cloudHasMore = cloud.clients.length > clients.length;
-  if (_isPhone || cloudTime > localTime || cloudHasMore) {
+  if (tgSyncTimer) return false;
+  const cloudCount = cloud.clients.length;
+  const localCount = clients.length;
+  // Берём облако только если там БОЛЬШЕ клиентов, или столько же но новее
+  // Никогда не перезаписываем большее количество меньшим
+  const shouldTakeCloud = cloudCount > localCount || (cloudCount === localCount && cloudTime > localTime);
+  if (shouldTakeCloud) {
     clients = cloud.clients;
     if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
     autoDedup(true);
@@ -4053,8 +4056,7 @@ function _applyCloudData(cloud) {
     localStorage.setItem('ocean_last_save', cloudTime.toString());
     renderTabs(); renderCurrentTab();
     const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-    const src = _isPhone ? 'с Мака' : 'с телефона';
-    setTgBar('📥', 'Обновлено ' + src + ' · ' + t, '#a5d6a7', false);
+    setTgBar('📥', 'Обновлено · ' + t + ' · ' + cloudCount + ' кл.', '#a5d6a7', false);
     updateSyncStatus('✅ ' + t);
     return true;
   }
