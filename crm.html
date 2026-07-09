@@ -992,7 +992,7 @@ function renderTabs() {
     return `<button class="tab${activeTab===t.id?' active':''}" onclick="setTab('${t.id}')">${t.label}${badge}</button>`;
   }).join('');
 }
-function setTab(id) { activeTab = id; render(); }
+function setTab(id) { activeTab = id; localStorage.setItem('ocean_active_tab', id); render(); }
 
 // ============ STATUS GRID RENDER ============
 function renderStatusGrid(containerId, selectedId, onClickFn) {
@@ -4039,6 +4039,15 @@ let _fbListenerActive = false;
 let _fbConnected = false;
 
 // Асинхронная загрузка Firebase — страница не ждёт
+function _fbOfflineFallback(reason) {
+  setTgBar('📴', reason || 'Офлайн — локальные данные', '#ff8a80', true);
+  if (clients.length === 0) {
+    try { clients = JSON.parse(localStorage.getItem('ocean_crm_v3') || '[]'); } catch(e) {}
+  }
+  renderTabs();
+  renderCurrentTab();
+}
+
 function loadFirebaseAsync() {
   const s1 = document.createElement('script');
   s1.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
@@ -4051,13 +4060,13 @@ function loadFirebaseAsync() {
         fbDB = firebase.database();
         startFbListener();
       } catch(e) {
-        setTgBar('⚠️', 'Ошибка Firebase', '#ff8a80', true);
+        _fbOfflineFallback('Ошибка Firebase — локальные данные');
       }
     };
-    s2.onerror = function() { setTgBar('📴', 'Firebase недоступен', '#ff8a80', true); };
+    s2.onerror = function() { _fbOfflineFallback('Firebase недоступен — локальные данные'); };
     document.head.appendChild(s2);
   };
-  s1.onerror = function() { setTgBar('📴', 'Firebase недоступен', '#ff8a80', true); };
+  s1.onerror = function() { _fbOfflineFallback('Firebase недоступен — локальные данные'); };
   document.head.appendChild(s1);
 }
 
