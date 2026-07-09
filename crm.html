@@ -4918,6 +4918,54 @@ setTimeout(function() {
   setTimeout(() => fbSave(), 2000);
   localStorage.setItem('patch_navaginskaya_july6_v1', '1');
 }, 48000);
+
+// ============ ПАТЧ: выравнивание дат пробных по расписанию ============
+// Запускается один раз — исправляет localStorage у всех устройств
+setTimeout(function() {
+  if (localStorage.getItem('patch_fix_schedule_july9_v1')) return;
+
+  // JS weekday: 0=Вс,1=Пн,2=Вт,3=Ср,4=Чт,5=Пт,6=Сб
+  const SCH = {
+    'Малыши':    [{wd:2,h:18,m:0},{wd:6,h:12,m:0}],          // Вт 18:00, Сб 12:00
+    'Младшие':   [{wd:1,h:18,m:0},{wd:3,h:18,m:0},{wd:5,h:18,m:0},{wd:6,h:13,m:0}], // Пн/Ср/Пт 18:00, Сб 13:00
+    'Средние':   [{wd:5,h:19,m:0}],                           // Пт 19:00
+    'Подростки': [{wd:3,h:19,m:0},{wd:6,h:18,m:0}],           // Ср 19:00, Сб 18:00
+  };
+
+  function onSch(dt, slots) {
+    return slots.some(s => dt.getDay()===s.wd && dt.getHours()===s.h && dt.getMinutes()===s.m);
+  }
+
+  function nearestSlot(base, slots) {
+    let best = null;
+    slots.forEach(function(s) {
+      var diff = (s.wd - base.getDay() + 7) % 7 || 7;
+      var d = new Date(base); d.setDate(d.getDate()+diff); d.setHours(s.h,s.m,0,0);
+      if (!best || d < best) best = d;
+    });
+    return best;
+  }
+
+  var today = new Date(); today.setHours(0,0,0,0);
+  var fixed = 0;
+
+  clients.forEach(function(c) {
+    if (c.status !== 'trial' && c.status !== 'arrived') return;
+    var slots = SCH[c.group]; if (!slots || !c.trial) return;
+    var dt = new Date(c.trial);
+    if (onSch(dt, slots)) return;
+    var base = dt < today ? new Date(today) : new Date(dt); base.setHours(0,0,0,0);
+    var nd = nearestSlot(base, slots);
+    if (nd) { c.trial = nd.toISOString().slice(0,16); fixed++; }
+  });
+
+  if (fixed > 0) {
+    save(); renderTabs(); renderCurrentTab();
+    showToast('📅 Расписание: исправлено ' + fixed + ' дат пробных');
+    setTimeout(function(){ fbSave(); }, 3000);
+  }
+  localStorage.setItem('patch_fix_schedule_july9_v1', '1');
+}, 55000);
 </script>
 </body>
 </html>
