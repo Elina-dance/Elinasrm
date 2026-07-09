@@ -1353,7 +1353,13 @@ function renderReminders() {
   // Блок абонементов — вычисляем ДО early return, чтобы учесть в счётчике
   const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
   // Новые ни разу не тронутые — всегда в напоминаниях пока статус не изменится
-  const newUntouched = clients.filter(c => c.status === 'new' && (!c.history || c.history.length === 0) && matchesSearch(c,q));
+  // «Клиент добавлен» от бэкфилл-патча не считается реальным касанием
+  const newUntouched = clients.filter(c => {
+    if (c.status !== 'new') return false;
+    if (!matchesSearch(c, q)) return false;
+    const realHistory = (c.history||[]).filter(h => h.result !== 'Клиент добавлен');
+    return realHistory.length === 0;
+  });
 
   const totalToday = trialList.length + callList.length + abonEndToday.length + newUntouched.length;
 
