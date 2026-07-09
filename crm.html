@@ -4079,8 +4079,15 @@ function setTgBar(icon, text, color, showRetry) {
   if (retryBtn) retryBtn.style.display = showRetry ? 'inline-block' : 'none';
 }
 async function retrySyncNow() {
-  showToast('🔄 Повторная отправка...');
-  await fbSave();
+  if (!fbDB) {
+    // Firebase не подключён — попробуем переподключиться
+    _fbListenerActive = false;
+    showToast('🔄 Переподключаюсь...');
+    loadFirebaseAsync();
+    return;
+  }
+  // Firebase подключён — загружаем свежие данные с сервера
+  await manualTgLoad();
 }
 
 async function fbSave() {
@@ -4158,7 +4165,8 @@ function startFbListener() {
       // никогда не перезаписываем: локальные данные всегда свежее
       if (tgSyncTimer && !_isPhone) return;
 
-      if (_isPhone || cloudTime > localTime) {
+      const cloudHasMore = cloud.clients.length > clients.length;
+      if (_isPhone || cloudTime > localTime || cloudHasMore) {
         clients = cloud.clients;
         if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
         autoDedup(true);
@@ -4392,6 +4400,12 @@ function importNewClients() {
 }
 
 async function manualTgLoad() {
+  if (!fbDB) {
+    showToast('⏳ Firebase ещё не готов — подождите секунду');
+    _fbListenerActive = false;
+    loadFirebaseAsync();
+    return;
+  }
   showToast('🔄 Загружаю...');
   setTgBar('🔄', 'Загружаю...', '#ffd54f', false);
   try {
