@@ -4301,6 +4301,7 @@ firebase.initializeApp(FB_CONFIG);
 const fbDB = firebase.database();
 let tgSyncTimer = null;
 let _fbListenerActive = false;
+let _fbConnected = false;
 
 function setTgBar(icon, text, color, showRetry) {
   const iconEl = document.getElementById('tg-sync-icon');
@@ -4360,7 +4361,20 @@ function startFbListener() {
   const _isPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   setTgBar('🔄', 'Подключаюсь...', '#ffd54f', false);
 
+  // Таймаут — если Firebase не ответил за 6 секунд, работаем офлайн
+  const fbTimeout = setTimeout(() => {
+    if (!_fbConnected) {
+      setTgBar('📴', 'Офлайн — локальные данные', '#ff8a80', true);
+      if (clients.length === 0) {
+        clients = JSON.parse(localStorage.getItem('ocean_crm_v3') || '[]');
+      }
+      renderTabs(); renderCurrentTab();
+    }
+  }, 6000);
+
   fbDB.ref('crm').on('value', (snapshot) => {
+    clearTimeout(fbTimeout);
+    _fbConnected = true;
     try {
       const cloud = snapshot.val();
       if (!cloud || !cloud.clients?.length) {
