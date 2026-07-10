@@ -44,3 +44,4 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
 - `patch_fix_schedule_july9_v1` (55s): Aligns future trial dates for `trial`-status clients to valid schedule slots
 - `patch_fix_schedule_july9_v2` (57s): Restores original historical trial dates for 7 arrived clients wrongly moved by v1
 - `patch_fix_schedule_july9_v3` (2s): Clears `2026-07-07` trial dates for `trial`-status clients (v1 artifacts); fixes Малыши→Средние for Пт 19:00 slots
+- `patch_fix_schedule_july9_v4` (2s): Restores original trial dates from `INITIAL_DATA` by client id for all `trial`-status clients — fixes v1 running on July 8 and pushing dates to the "nearest slot" (e.g. July 14) instead of July 9
