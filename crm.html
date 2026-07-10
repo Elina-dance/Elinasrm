@@ -5205,6 +5205,35 @@ setTimeout(function() {
   }
   localStorage.setItem('patch_fix_schedule_july9_v3', '1');
 }, 2000);
+
+// ============ ПАТЧ v4: восстановление дат пробных из INITIAL_DATA ============
+// Патч v1 запустился у пользователя 8 июля (а не 9-го) и переставил trial-даты
+// на «ближайший слот» от 8 июля — например, ближайший Вт для Малыши = 14 июля.
+// Так появились «призрачные» клиенты на вторник 14.07, которых там не должно быть.
+// Восстанавливаем оригинальные даты пробных прямо из INITIAL_DATA по id.
+setTimeout(function() {
+  if (localStorage.getItem('patch_fix_schedule_july9_v4')) return;
+
+  var origMap = {};
+  INITIAL_DATA.forEach(function(orig) { origMap[orig.id] = orig.trial || ''; });
+
+  var fixed4 = 0;
+  clients.forEach(function(c) {
+    if (c.status !== 'trial') return;
+    var origTrial = origMap[c.id];
+    if (origTrial === undefined) return;
+    if (c.trial === origTrial) return;
+    c.trial = origTrial;
+    fixed4++;
+  });
+
+  if (fixed4 > 0) {
+    save(); renderTabs(); renderCurrentTab();
+    showToast('📅 Восстановлено ' + fixed4 + ' дат пробных');
+    setTimeout(function(){ fbSave(); }, 3000);
+  }
+  localStorage.setItem('patch_fix_schedule_july9_v4', '1');
+}, 2000);
 </script>
 </body>
 </html>
