@@ -98,7 +98,7 @@ n8n (твой сервер)
 
 ### Установка
 
-1. **Ключ OpenRouter**: заведи аккаунт на [openrouter.ai](https://openrouter.ai) → Keys → создай ключ, пополни баланс (хватит небольшой суммы). В n8n: **Credentials → Add → OpenRouter API**, вставь ключ.
+1. **Ключ OpenRouter**: заведи аккаунт на [openrouter.ai](https://openrouter.ai) (вход через Google — карта не нужна) → Keys → создай ключ. Модель по умолчанию бесплатная (`google/gemini-2.0-flash-exp:free`), пополнять баланс не обязательно (~50 запросов/день). В n8n: **Credentials → Add → OpenRouter API**, вставь ключ.
 2. **Google-таблица**: создай пустую таблицу в Google Sheets с колонками: `Дата, Ребёнок, Возраст, Родитель, Телефон, Группа, Комментарий, Источник`. В n8n подключи **Google Sheets** credential (OAuth).
 3. **Импортируй** оба файла из `bot/n8n/`.
 4. В `oceanmove-save-lead`: в ноде «В Google-таблицу» выбери свой credential, свою таблицу и лист. (Firebase работает сразу.)
