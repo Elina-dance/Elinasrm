@@ -44,7 +44,7 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
 - Bot runs on the user's own **n8n server** — workflows stored in `bot/n8n/`:
   - `oceanmove-daily.json`: morning digest (10:00 MSK) to admin + class-day reminders to parent group chats
   - `oceanmove-commands.json`: replies to `/today`, `/trials`, `/renewals`, `/id`, `/help`
-  - `oceanmove-assistant.json`: AI assistant for parents (OpenRouter LLM, default `openai/gpt-4o-mini`) — chats, consults, captures trial-booking leads
+  - `oceanmove-assistant.json`: AI assistant for parents (**YandexGPT** — OpenRouter/foreign LLMs are geo-blocked from RU servers) — chats, consults, captures trial-booking leads. Conversation memory in Firebase `/chats/<chat_id>` (last 16 msgs); YandexGPT auth via n8n Header Auth credential (`Authorization: Api-Key <key>`); lead capture via `#LEAD#{...}` marker parsed out of the reply, then `Сохранить заявку` calls the save-lead sub-workflow
   - `oceanmove-save-lead.json`: sub-workflow tool (`save_lead`) — writes each lead to Firebase `/inbox` + a Google Sheet
 - **Lead inbox flow**: assistant writes leads to Firebase branch `/inbox` (atomic POST, never overwrites the main `clients` array). CRM reads `INBOX_URL` on load + polls every 60s, shows them in a «📨 Заявки из бота» block atop Reminders; `importBotLead(key)` creates a `new` client (channel «Telegram-бот») and DELETEs the inbox key; `dismissBotLead(key)` just removes it
 - Setup instructions: `bot/README.md`

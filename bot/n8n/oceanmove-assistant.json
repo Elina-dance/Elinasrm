@@ -2,82 +2,109 @@
   "name": "OceanMove — AI-ассистент для родителей",
   "nodes": [
     {
-      "id": "tg-trigger-assist",
+      "id": "tg-trigger-ya",
       "name": "Сообщение от родителя",
       "type": "n8n-nodes-base.telegramTrigger",
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
-        "updates": ["message"],
+        "updates": [
+          "message"
+        ],
         "additionalFields": {}
       },
       "typeVersion": 1.2
     },
     {
-      "id": "openrouter-model",
-      "name": "Модель (OpenRouter)",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "position": [280, 260],
+      "id": "mem-load",
+      "name": "Память: загрузить",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        220,
+        0
+      ],
       "parameters": {
-        "model": "google/gemini-2.0-flash-exp:free",
-        "options": {
-          "temperature": 0.4,
-          "maxTokens": 500
-        }
+        "url": "=https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/chats/{{ $json.message.chat.id }}.json",
+        "options": {}
       },
-      "typeVersion": 1
+      "typeVersion": 4.2
     },
     {
-      "id": "memory-assist",
-      "name": "Память диалога",
-      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-      "position": [460, 260],
+      "id": "build-req",
+      "name": "Собрать запрос",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        440,
+        0
+      ],
       "parameters": {
-        "sessionKey": "={{ $('Сообщение от родителя').item.json.message.chat.id }}",
-        "sessionIdType": "customKey",
-        "contextWindowLength": 20
+        "jsCode": "// Загружаем историю диалога (из ноды памяти) и собираем запрос к YandexGPT\nconst trig = $('Сообщение от родителя').first().json;\nconst msg = trig.message || {};\nconst chatId = msg.chat.id;\nconst userText = msg.text || '';\n\nconst prev = ($json && typeof $json === 'object' && !Array.isArray($json)) ? $json : {};\nconst history = Array.isArray(prev.messages) ? prev.messages : [];\nconst leadSaved = !!prev.leadSaved;\n\nconst SYSTEM = \"Ты — доброжелательный администратор детской танцевальной студии «Движение Океана» (город Сочи). Отвечай тепло, по-русски, простым живым языком, можно с эмодзи 🌊💃. Общаешься с родителями в Telegram.\\n\\nТВОЯ ЦЕЛЬ:\\n1) Ответить на вопросы родителя о студии.\\n2) Мягко, без напора, записать ребёнка на бесплатное пробное занятие — собери: имя ребёнка, возраст, имя родителя (как обращаться) и телефон.\\n\\nРАСПИСАНИЕ И ГРУППЫ (по возрасту):\\n• Малыши (3–4 года): Вт 18:00, Сб 12:00\\n• Младшие (5–7 лет): Пн 18:00, Ср 18:00, Пт 18:00, Сб 13:00\\n• Средние (8–10 лет): Пт 19:00\\n• Подростки (11+): Ср 19:00, Сб 18:00\\nПодбирай группу по возрасту. Если возраст на границе — предложи ближайшую и уточни.\\n\\nЦЕНЫ И АДРЕС: ЗАПОЛНИ_ЗДЕСЬ (стоимость абонемента, адрес студии, как добраться). Пока не заполнено — НЕ придумывай цифры и адрес. Если спрашивают цену/адрес: «Точную стоимость и адрес вам подскажет администратор — оставьте, пожалуйста, телефон, и мы свяжемся 🌊».\\n\\nКАК СОБИРАТЬ ЗАЯВКУ:\\n• Спрашивай по одному полю за раз, естественно.\\n• Не проси все данные в первом сообщении.\\n• Имя родителя бери из того, как он представился.\\n\\nВАЖНО — ТЕХНИЧЕСКАЯ МЕТКА:\\nКогда ты собрал ВСЕ четыре поля (имя ребёнка, возраст, имя родителя, телефон) — в САМОМ КОНЦЕ своего сообщения добавь ОТДЕЛЬНОЙ СТРОКОЙ метку строго в таком виде:\\n#LEAD#{\\\"parent_name\\\":\\\"имя\\\",\\\"child_name\\\":\\\"имя\\\",\\\"child_age\\\":\\\"4\\\",\\\"phone\\\":\\\"+7...\\\",\\\"group\\\":\\\"Малыши\\\",\\\"notes\\\":\\\"кратко что хотят\\\"}\\nРодитель эту строку не увидит — её убирает система. Добавляй метку ТОЛЬКО ОДИН РАЗ, когда все 4 поля собраны. group подставь по возрасту. Если данные ещё не собраны — метку НЕ добавляй.\\n\\nПРАВИЛА:\\n• Никогда не упоминай, что ты ИИ, бот, нейросеть, систему или метку.\\n• Не выдумывай факты, которых нет в этом промпте.\\n• Если вопрос не про студию — вежливо верни к теме занятий.\\n• Отвечай коротко.\";\n\nconst messages = [{ role: 'system', text: SYSTEM }, ...history, { role: 'user', text: userText }];\n\nconst body = {\n  modelUri: 'gpt://b1ghvtui6pj1b7garjo8/yandexgpt-lite/latest',\n  completionOptions: { stream: false, temperature: 0.4, maxTokens: 500 },\n  messages: messages\n};\n\nreturn [{ json: { chatId, userText, leadSaved, history, body } }];"
       },
-      "typeVersion": 1.3
+      "typeVersion": 2
     },
     {
-      "id": "save-lead-tool",
-      "name": "save_lead",
-      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
-      "position": [640, 260],
+      "id": "yandexgpt",
+      "name": "YandexGPT",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        660,
+        0
+      ],
       "parameters": {
-        "name": "save_lead",
-        "description": "Сохрани заявку на пробное занятие. Вызывай ТОЛЬКО когда собраны все поля: имя ребёнка, возраст, имя родителя и телефон. group подставь по возрасту (Малыши 3-4, Младшие 5-7, Средние 8-10, Подростки 11+).",
-        "workflowId": {
-          "__rl": true,
-          "mode": "list",
-          "value": "",
-          "cachedResultName": "OceanMove — сохранить заявку (ВЫБЕРИ после импорта)"
-        },
-        "specifyInputSchema": true,
-        "jsonSchemaExample": "{\n  \"parent_name\": \"Марина\",\n  \"child_name\": \"Аня\",\n  \"child_age\": \"4\",\n  \"phone\": \"+7 900 000-00-00\",\n  \"group\": \"Малыши\",\n  \"notes\": \"хочет на пробное в субботу\"\n}"
+        "method": "POST",
+        "url": "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
       },
-      "typeVersion": 2.1
+      "typeVersion": 4.2
     },
     {
-      "id": "ai-agent-assist",
-      "name": "AI — Ассистент студии",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "position": [360, 0],
+      "id": "parse-resp",
+      "name": "Разобрать ответ",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        880,
+        0
+      ],
       "parameters": {
-        "text": "={{ $('Сообщение от родителя').item.json.message.text }}",
-        "promptType": "define",
-        "options": {
-          "systemMessage": "Ты — доброжелательный администратор детской танцевальной студии «Движение Океана» (город Сочи). Отвечай тепло, по-русски, простым живым языком, можно с эмодзи 🌊💃. Ты общаешься с родителями в Telegram.\n\n🎯 ТВОЯ ЦЕЛЬ:\n1) Ответить на вопросы родителя о студии.\n2) Мягко, без напора, записать ребёнка на бесплатное пробное занятие — для этого собери: имя ребёнка, возраст, имя родителя (как обращаться) и телефон для связи.\n\n📅 РАСПИСАНИЕ И ГРУППЫ (по возрасту):\n• Малыши (3–4 года): Вт 18:00, Сб 12:00\n• Младшие (5–7 лет): Пн 18:00, Ср 18:00, Пт 18:00, Сб 13:00\n• Средние (8–10 лет): Пт 19:00\n• Подростки (11+): Ср 19:00, Сб 18:00\n\nПодбирай группу по возрасту ребёнка. Если возраст на границе — предложи ближайшую и уточни у родителя.\n\n💰 ЦЕНЫ И АДРЕС: «ЗАПОЛНИ_ЗДЕСЬ — стоимость абонемента, адрес студии, как добраться». Пока не заполнено — НЕ придумывай цифры и адрес. Если спрашивают цену/адрес, ответь: «Точную стоимость и адрес вам подскажет администратор — оставьте, пожалуйста, телефон, и мы свяжемся 🌊».\n\n📝 КАК СОБИРАТЬ ЗАЯВКУ:\n• Спрашивай по одному полю за раз, естественно, в ходе разговора.\n• Не проси все данные в первом сообщении.\n• Имя родителя бери из того, как он представился (убирай «меня зовут»).\n• Как только собраны имя ребёнка + возраст + имя родителя + телефон — ВЫЗОВИ инструмент save_lead с этими полями, подставив group по возрасту и notes (кратко: что хотят / на какой день). После сохранения тепло подтверди: «Спасибо! Записала, администратор свяжется с вами для подтверждения времени 🌊💛».\n\n🔒 ПРАВИЛА:\n• Никогда не упоминай, что ты ИИ, бот, нейросеть, инструменты, таблицы или систему.\n• Не выдумывай факты, которых нет в этом промпте.\n• Если вопрос не про студию — вежливо верни к теме занятий.\n• Отвечай коротко и по делу."
-        }
+        "jsCode": "// Разбираем ответ YandexGPT: чистим текст, ловим метку заявки, готовим новую память\nconst c1 = $('Собрать запрос').first().json;\nconst resp = $json;\n\nlet text = '';\ntry { text = resp.result.alternatives[0].message.text || ''; } catch (e) { text = ''; }\n\nconst m = text.match(/#LEAD#\\s*(\\{[\\s\\S]*?\\})/);\nlet reply = text.replace(/#LEAD#[\\s\\S]*$/, '').trim();\nif (!reply) reply = 'Спасибо! Я всё записала, мы скоро с вами свяжемся 🌊';\n\nlet lead = null;\nif (m && !c1.leadSaved) {\n  try { lead = JSON.parse(m[1]); } catch (e) { lead = null; }\n}\n\nconst newMessages = [\n  ...(c1.history || []),\n  { role: 'user', text: c1.userText },\n  { role: 'assistant', text: reply }\n].slice(-16);\n\nconst state = { messages: newMessages, leadSaved: c1.leadSaved || !!lead };\n\nreturn [{ json: { chatId: c1.chatId, reply, hasLead: !!lead, lead: lead || {}, state } }];"
       },
-      "typeVersion": 3
+      "typeVersion": 2
     },
     {
-      "id": "tg-send-assist",
+      "id": "mem-save",
+      "name": "Память: сохранить",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1100,
+        -80
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/chats/{{ $json.chatId }}.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.state) }}",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "tg-send-ya",
       "name": "Ответить родителю",
       "type": "n8n-nodes-base.telegram",
-      "position": [820, 0],
+      "position": [
+        1320,
+        -80
+      ],
       "parameters": {
-        "text": "={{ $('AI — Ассистент студии').item.json.output }}",
+        "text": "={{ $('Разобрать ответ').item.json.reply }}",
         "chatId": "={{ $('Сообщение от родителя').item.json.message.chat.id }}",
         "additionalFields": {
           "appendAttribution": false
@@ -86,33 +113,182 @@
       "typeVersion": 1.2
     },
     {
-      "id": "sticky-assist-1",
+      "id": "if-lead",
+      "name": "Есть заявка?",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1100,
+        160
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-lead-1",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.hasLead }}",
+              "rightValue": ""
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "build-lead",
+      "name": "Собрать заявку",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1320,
+        160
+      ],
+      "parameters": {
+        "jsCode": "// Достаём поля заявки для под-воркфлоу сохранения\nreturn [{ json: $('Разобрать ответ').first().json.lead }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "save-lead-exec",
+      "name": "Сохранить заявку",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "position": [
+        1540,
+        160
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "OceanMove — сохранить заявку (ВЫБЕРИ после импорта)"
+        },
+        "options": {}
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "sticky-ya-1",
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
-      "position": [-40, -220],
+      "position": [
+        -40,
+        -260
+      ],
       "parameters": {
-        "width": 900,
-        "height": 180,
-        "content": "## 🤖 AI-ассистент студии «Движение Океана»\nРодитель пишет боту обычным текстом → нейросеть отвечает, консультирует и собирает заявку на пробное (имя, возраст, телефон).\nГотовую заявку сохраняет через инструмент **save_lead** → она попадает в CRM (Firebase /inbox) и в Google-таблицу.\n\n**Настройка:** 1) выбери Telegram credential в нодах-телеграм; 2) выбери OpenRouter credential в «Модель»; 3) в ноде **save_lead** выбери воркфлоу «OceanMove — сохранить заявку»; 4) впиши цены/адрес в системный промпт агента; 5) активируй."
+        "width": 1200,
+        "height": 210,
+        "content": "## 🤖 AI-ассистент студии (на YandexGPT)\nРодитель пишет боту → YandexGPT отвечает, помнит диалог (память в Firebase /chats) и собирает заявку. Готовую заявку сохраняет в CRM (/inbox) и Google-таблицу.\n\n**Настройка после импорта:**\n1) Создай credential **Header Auth**: Name = `Authorization`, Value = `Api-Key ТВОЙ_КЛЮЧ` — и выбери его в ноде **YandexGPT**.\n2) В ноде **Сохранить заявку** выбери воркфлоу «OceanMove — сохранить заявку».\n3) В ноде **Ответить родителю** и в триггере выбери Telegram credential.\n4) Впиши цены/адрес в системный промпт (нода «Собрать запрос», текст `ЗАПОЛНИ_ЗДЕСЬ`).\n5) Активируй воркфлоу."
       },
       "typeVersion": 1
     }
   ],
   "connections": {
     "Сообщение от родителя": {
-      "main": [[{ "node": "AI — Ассистент студии", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Память: загрузить",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Модель (OpenRouter)": {
-      "ai_languageModel": [[{ "node": "AI — Ассистент студии", "type": "ai_languageModel", "index": 0 }]]
+    "Память: загрузить": {
+      "main": [
+        [
+          {
+            "node": "Собрать запрос",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Память диалога": {
-      "ai_memory": [[{ "node": "AI — Ассистент студии", "type": "ai_memory", "index": 0 }]]
+    "Собрать запрос": {
+      "main": [
+        [
+          {
+            "node": "YandexGPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "save_lead": {
-      "ai_tool": [[{ "node": "AI — Ассистент студии", "type": "ai_tool", "index": 0 }]]
+    "YandexGPT": {
+      "main": [
+        [
+          {
+            "node": "Разобрать ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "AI — Ассистент студии": {
-      "main": [[{ "node": "Ответить родителю", "type": "main", "index": 0 }]]
+    "Разобрать ответ": {
+      "main": [
+        [
+          {
+            "node": "Память: сохранить",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Есть заявка?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Память: сохранить": {
+      "main": [
+        [
+          {
+            "node": "Ответить родителю",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть заявка?": {
+      "main": [
+        [
+          {
+            "node": "Собрать заявку",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Собрать заявку": {
+      "main": [
+        [
+          {
+            "node": "Сохранить заявку",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
