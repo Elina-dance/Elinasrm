@@ -756,6 +756,20 @@
   </div>
 </div>
 
+<!-- BOT CHATS MODAL -->
+<div class="modal-overlay" id="bot-chats-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>💬 Диалоги бота</span>
+      <button class="btn-close" onclick="closeModal('bot-chats-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Переписки родителей с ботом. «Взять на себя» — бот замолчит в этом чате, и ты пишешь родителю сама в Telegram.</div>
+      <div id="bot-chats-list"></div>
+    </div>
+  </div>
+</div>
+
 <!-- IMPORT MODAL -->
 <div class="modal-overlay" id="import-modal">
   <div class="modal">
@@ -1438,6 +1452,11 @@ function renderReminders() {
 
   // ── БЛОК 0: Заявки из Telegram-бота (ожидают подтверждения) ──
   html += renderBotInboxBlock();
+
+  // Доступ к перепискам бота
+  html += `<div style="text-align:center;margin-bottom:16px;">
+    <button onclick="openBotChats()" style="background:#f0ebff;color:var(--purple);border:1.5px solid #d6c9f5;border-radius:20px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;">💬 Диалоги бота</button>
+  </div>`;
 
   if (!totalToday && !arrivedNoB.length && !botInbox.length) {
     html += `<div style="text-align:center;padding:50px 20px">
@@ -4243,6 +4262,7 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
 // ============ FIREBASE REST API (без SDK — нет зависаний) ============
 const FB_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json';
 const INBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json';
+const CHATS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/chats.json';
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let tgSyncTimer = null;
 let _fbConnected = false;
@@ -4410,6 +4430,67 @@ async function dismissBotLead(key) {
   botInbox = botInbox.filter(l => l.key !== key);
   try { await fetch(INBOX_URL.replace('.json', '/' + key + '.json'), { method: 'DELETE' }); } catch (e) {}
   renderCurrentTab();
+}
+
+// ============ ДИАЛОГИ БОТА (Firebase /chats) ============
+async function openBotChats() {
+  document.getElementById('bot-chats-modal').classList.add('open');
+  const list = document.getElementById('bot-chats-list');
+  list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">Загружаю переписки…</div>';
+  try {
+    const resp = await fetch(CHATS_URL);
+    const data = resp.ok ? await resp.json() : null;
+    const chats = data ? Object.keys(data).map(k => ({ chatId: k, ...data[k] })) : [];
+    chats.sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+    renderBotChats(chats);
+  } catch (e) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--orange);">Не удалось загрузить переписки</div>';
+  }
+}
+
+function renderBotChats(chats) {
+  const list = document.getElementById('bot-chats-list');
+  if (!chats.length) { list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">Пока переписок нет</div>'; return; }
+  let h = '';
+  chats.forEach(chat => {
+    const msgs = Array.isArray(chat.messages) ? chat.messages : [];
+    const who = chat.parent || ('Чат ' + chat.chatId);
+    const when = chat.updated ? new Date(chat.updated).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    const paused = !!chat.paused;
+    const bubbles = msgs.map(m => {
+      const isUser = m.role === 'user';
+      return `<div style="display:flex;justify-content:${isUser?'flex-end':'flex-start'};margin-bottom:6px;">
+        <div style="max-width:78%;background:${isUser?'#e0f7fa':'#f0ebff'};color:var(--text);border-radius:12px;padding:7px 11px;font-size:13px;line-height:1.4;white-space:pre-wrap;">${(m.text||'').replace(/</g,'&lt;')}</div>
+      </div>`;
+    }).join('');
+    h += `<div style="border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:14px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:14px;">${who}</div>
+        <div style="font-size:11px;color:var(--muted);">${when}</div>
+      </div>
+      <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
+        ${chat.leadSaved?'<span style="background:var(--green-bg);color:var(--green);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">✅ Заявка поймана</span>':''}
+        ${paused?'<span style="background:var(--orange-bg);color:var(--orange);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">⏸️ Ты ведёшь чат</span>':'<span style="background:#e0f7fa;color:#00838f;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">🤖 Отвечает бот</span>'}
+      </div>
+      <div style="background:#fafafa;border-radius:10px;padding:10px;max-height:280px;overflow-y:auto;margin-bottom:10px;">${bubbles || '<div style="color:var(--muted);font-size:12px;">Сообщений нет</div>'}</div>
+      ${paused
+        ? `<button onclick="toggleChatPause('${chat.chatId}',false)" style="width:100%;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">▶️ Вернуть боту</button>`
+        : `<button onclick="toggleChatPause('${chat.chatId}',true)" style="width:100%;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">🙋 Взять на себя (бот замолчит)</button>`}
+    </div>`;
+  });
+  list.innerHTML = h;
+}
+
+async function toggleChatPause(chatId, pause) {
+  try {
+    await fetch(CHATS_URL.replace('.json', '/' + chatId + '.json'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused: pause })
+    });
+  } catch (e) {}
+  showToast(pause ? '🙋 Чат за тобой — бот замолчал' : '🤖 Бот снова отвечает');
+  openBotChats();
 }
 
 async function ghSave() { await fbSave(); }
