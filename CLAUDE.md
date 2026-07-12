@@ -44,6 +44,9 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
 - Bot runs on the user's own **n8n server** — workflows stored in `bot/n8n/`:
   - `oceanmove-daily.json`: morning digest (10:00 MSK) to admin + class-day reminders to parent group chats
   - `oceanmove-commands.json`: replies to `/today`, `/trials`, `/renewals`, `/id`, `/help`
+  - `oceanmove-assistant.json`: AI assistant for parents (OpenRouter LLM, default `openai/gpt-4o-mini`) — chats, consults, captures trial-booking leads
+  - `oceanmove-save-lead.json`: sub-workflow tool (`save_lead`) — writes each lead to Firebase `/inbox` + a Google Sheet
+- **Lead inbox flow**: assistant writes leads to Firebase branch `/inbox` (atomic POST, never overwrites the main `clients` array). CRM reads `INBOX_URL` on load + polls every 60s, shows them in a «📨 Заявки из бота» block atop Reminders; `importBotLead(key)` creates a `new` client (channel «Telegram-бот») and DELETEs the inbox key; `dismissBotLead(key)` just removes it
 - Setup instructions: `bot/README.md`
 - Bot reads the same Firebase `crm.json` as the CRM; renewal logic mirrors `isAbonementEndToday()` in `crm.html`
 - The `SCHEDULE` constant inside both workflow Code nodes mirrors the studio schedule above — update all copies when the schedule changes
