@@ -1,0 +1,120 @@
+{
+  "name": "OceanMove — сохранить заявку",
+  "nodes": [
+    {
+      "id": "exec-trigger-save",
+      "name": "Заявка от ассистента",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [0, 0],
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"parent_name\": \"Марина\",\n  \"child_name\": \"Аня\",\n  \"child_age\": \"4\",\n  \"phone\": \"+7 900 000-00-00\",\n  \"group\": \"Малыши\",\n  \"notes\": \"хочет на пробное в субботу\"\n}"
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "http-firebase-inbox",
+      "name": "В CRM (Firebase /inbox)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [260, -80],
+      "parameters": {
+        "url": "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent_name: $json.parent_name || '', child_name: $json.child_name || '', child_age: $json.child_age || '', phone: $json.phone || '', group: $json.group || '', notes: $json.notes || '', source: 'telegram', created: $now.toISO() }) }}",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "gsheets-append",
+      "name": "В Google-таблицу",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [260, 120],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "ВЫБЕРИ свою Google-таблицу"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Лист1"
+        },
+        "columns": {
+          "value": {
+            "Дата": "={{ $now.setZone('Europe/Moscow').toFormat('dd.MM.yyyy HH:mm') }}",
+            "Ребёнок": "={{ $json.child_name }}",
+            "Возраст": "={{ $json.child_age }}",
+            "Родитель": "={{ $json.parent_name }}",
+            "Телефон": "={{ $json.phone }}",
+            "Группа": "={{ $json.group }}",
+            "Комментарий": "={{ $json.notes }}",
+            "Источник": "Telegram-бот"
+          },
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "typeVersion": 4.5
+    },
+    {
+      "id": "set-result-save",
+      "name": "Готово",
+      "type": "n8n-nodes-base.set",
+      "position": [520, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "res-1",
+              "name": "result",
+              "type": "string",
+              "value": "Заявка сохранена"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "sticky-save-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-40, -220],
+      "parameters": {
+        "width": 720,
+        "height": 170,
+        "content": "## 💾 Сохранение заявки (вызывается ассистентом как инструмент save_lead)\nПишет заявку сразу в два места:\n• **Firebase /inbox** → появится в CRM в разделе «Заявки из бота»\n• **Google-таблица** → твой отдельный журнал заявок\n\n**Настройка:** в ноде «В Google-таблицу» выбери свой Google credential, свою таблицу и лист. Firebase работает сразу, ничего вписывать не надо."
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Заявка от ассистента": {
+      "main": [
+        [
+          { "node": "В CRM (Firebase /inbox)", "type": "main", "index": 0 },
+          { "node": "В Google-таблицу", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "В CRM (Firebase /inbox)": {
+      "main": [[{ "node": "Готово", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

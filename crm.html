@@ -1370,6 +1370,41 @@ function hasTodayCall(c) {
   return d >= todayStart() && d < tomorrowStart();
 }
 
+// Блок заявок из Telegram-бота — карточки с кнопками «Добавить» / «Удалить»
+function renderBotInboxBlock() {
+  if (!botInbox.length) return '';
+  let h = `<div style="margin-top:4px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+    <div style="flex:1;height:2px;background:linear-gradient(to right,#00acc1,transparent);"></div>
+    <div style="background:#00acc1;color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">📨 Заявки из бота (${botInbox.length})</div>
+    <div style="flex:1;height:2px;background:linear-gradient(to left,#00acc1,transparent);"></div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;">Новые заявки из Telegram — подтверди, чтобы добавить в клиенты</div>`;
+  botInbox.forEach(l => {
+    const when = l.created ? new Date(l.created).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    const ageStr = l.child_age ? ', ' + l.child_age + ' г.' : '';
+    const waPhone = l.phone ? l.phone.replace(/\D/g,'') : '';
+    h += `<div class="remind-card" style="border:2px solid #00acc1;background:#e0f7fa;">
+      <div class="remind-card-top">
+        <div class="remind-name">${(l.child_name||'Ребёнок')}${ageStr}</div>
+        <div style="font-size:11px;color:var(--muted);">${when}</div>
+      </div>
+      <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        ${l.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${l.group}</span>`:''}
+        ${l.parent_name?`<span style="background:#fff;color:#00838f;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👩 ${l.parent_name}</span>`:''}
+        <span style="background:#e0f2f1;color:#00695c;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📣 Telegram-бот</span>
+      </div>
+      ${l.phone?`<div style="margin-bottom:8px;font-size:14px;font-weight:700;color:var(--text);">📞 ${l.phone}</div>`:'<div style="margin-bottom:8px;font-size:12px;color:var(--orange);">⚠️ Телефон не указан</div>'}
+      ${l.notes?`<div class="card-notes" style="margin-bottom:8px;">${l.notes}</div>`:''}
+      ${waPhone?`<a href="https://wa.me/7${waPhone.replace(/^[78]/,'')}" target="_blank" style="display:block;text-align:center;background:#25d366;color:white;border-radius:8px;padding:9px;font-size:13px;font-weight:700;text-decoration:none;margin-bottom:8px;">💬 Написать в WhatsApp</a>`:''}
+      <div style="display:flex;gap:8px;">
+        <button onclick="importBotLead('${l.key}')" style="flex:2;background:var(--green);color:white;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;">✅ Добавить в клиенты</button>
+        <button onclick="dismissBotLead('${l.key}')" style="flex:1;background:#fff;color:var(--gray);border:1.5px solid var(--border);border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;">🗑️</button>
+      </div>
+    </div>`;
+  });
+  return h;
+}
+
 function renderReminders() {
   const el = document.getElementById('content');
   const q = getSearchQuery();
@@ -1401,7 +1436,10 @@ function renderReminders() {
     <div class="date-sub">${todayStr}</div>
   </div>`;
 
-  if (!totalToday && !arrivedNoB.length) {
+  // ── БЛОК 0: Заявки из Telegram-бота (ожидают подтверждения) ──
+  html += renderBotInboxBlock();
+
+  if (!totalToday && !arrivedNoB.length && !botInbox.length) {
     html += `<div style="text-align:center;padding:50px 20px">
       <div style="font-size:52px;margin-bottom:12px">🌊</div>
       <p style="color:var(--muted);font-size:14px;line-height:1.7">На сегодня задач нет.<br>Можно выдохнуть 😊</p>
@@ -4204,6 +4242,8 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
 
 // ============ FIREBASE REST API (без SDK — нет зависаний) ============
 const FB_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json';
+const INBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json';
+let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let tgSyncTimer = null;
 let _fbConnected = false;
 let _fbSSE = null;
@@ -4261,6 +4301,8 @@ async function loadFromFirebase() {
       if (!_applyCloudData(cloud)) fbSave();
     }
     startSSE();
+    loadBotInbox(true);
+    setInterval(() => loadBotInbox(true), 60000);
   } catch(e) {
     clearTimeout(fbTimeout);
     _fbOfflineFallback('Нет связи — локальные данные');
@@ -4323,6 +4365,51 @@ async function fbSave() {
     setTgBar('⚠️', 'Нет связи', '#ff8a80', true);
     updateSyncStatus('⚠️ Нет связи');
   }
+}
+
+// ============ ЗАЯВКИ ИЗ TELEGRAM-БОТА (Firebase /inbox) ============
+async function loadBotInbox(rerender) {
+  try {
+    const resp = await fetch(INBOX_URL);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    botInbox = data ? Object.keys(data).map(k => ({ key: k, ...data[k] })) : [];
+    botInbox.sort((a, b) => (a.created || '').localeCompare(b.created || ''));
+    if (rerender && activeTab === 'remind') renderCurrentTab();
+  } catch (e) { console.log('inbox load error:', e); }
+}
+
+// Подтвердить заявку → создать клиента в CRM и убрать из inbox
+async function importBotLead(key) {
+  const lead = botInbox.find(l => l.key === key);
+  if (!lead) return;
+  const ageStr = lead.child_age ? ' ' + lead.child_age + ' г.' : '';
+  const name = (lead.child_name || 'Ребёнок') + ageStr + (lead.parent_name ? ' — ' + lead.parent_name : '');
+  clients.unshift({
+    id: getNextId(),
+    name,
+    phone: lead.phone || '',
+    group: lead.group || '',
+    channel: 'Telegram-бот',
+    trial: '',
+    status: 'new',
+    notes: lead.notes || '',
+    nextCall: '',
+    history: [{ date: new Date().toISOString(), result: 'Клиент добавлен', note: 'Заявка из Telegram-бота' }]
+  });
+  save(); fbSave();
+  botInbox = botInbox.filter(l => l.key !== key);
+  try { await fetch(INBOX_URL.replace('.json', '/' + key + '.json'), { method: 'DELETE' }); } catch (e) {}
+  showToast('✅ Заявка добавлена в клиенты');
+  renderCurrentTab();
+}
+
+// Отклонить заявку (спам/ошибка) → просто убрать из inbox
+async function dismissBotLead(key) {
+  if (!confirm('Удалить заявку без добавления в клиенты?')) return;
+  botInbox = botInbox.filter(l => l.key !== key);
+  try { await fetch(INBOX_URL.replace('.json', '/' + key + '.json'), { method: 'DELETE' }); } catch (e) {}
+  renderCurrentTab();
 }
 
 async function ghSave() { await fbSave(); }
