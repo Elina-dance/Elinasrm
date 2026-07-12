@@ -1,0 +1,101 @@
+{
+  "name": "OceanMove — утренний дайджест и напоминания",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Каждый день в 10:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json",
+        "options": {}
+      },
+      "id": "http-firebase-1",
+      "name": "CRM из Firebase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== НАСТРОЙКИ — впиши chat id (узнать: напиши боту /id в нужном чате) =====\nconst ADMIN_CHAT_ID = '';            // твой личный chat id — сюда придёт дайджест\nconst GROUP_CHATS = {                // chat id групповых чатов родителей\n  'Малыши': '',\n  'Младшие': '',\n  'Средние': '',\n  'Подростки': '',\n};\n// ============================================================================\n\n// Расписание студии — зеркало CLAUDE.md и констант SCH/MOVE_SCH в crm.html\n// JS weekday: 0=Вс, 1=Пн, 2=Вт, 3=Ср, 4=Чт, 5=Пт, 6=Сб\nconst SCHEDULE = {\n  'Малыши':    [{ wd: 2, time: '18:00' }, { wd: 6, time: '12:00' }],\n  'Младшие':   [{ wd: 1, time: '18:00' }, { wd: 3, time: '18:00' }, { wd: 5, time: '18:00' }, { wd: 6, time: '13:00' }],\n  'Средние':   [{ wd: 5, time: '19:00' }],\n  'Подростки': [{ wd: 3, time: '19:00' }, { wd: 6, time: '18:00' }],\n};\nconst WD_RU = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];\nconst MONTHS_RU = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];\n\nconst clients = ($input.first().json.clients) || [];\n\n// Студия живёт по Сочи (МСК, UTC+3, без перевода часов)\nconst msk = new Date(Date.now() + 3*3600*1000);\nconst todayStr = msk.toISOString().slice(0,10);\nconst wd = msk.getUTCDay();\n\nfunction fmtDateRu(iso){\n  if (!iso) return '—';\n  const d = new Date(iso);\n  return d.getUTCDate() + ' ' + MONTHS_RU[d.getUTCMonth()];\n}\n\n// Продления — та же логика, что isAbonementEndToday() в crm.html\nfunction needsRenewal(c){\n  if (c.status !== 'bought') return false;\n  if (c.abRenewalPaid) return false;\n  if (!c.abEnd && !c.abNotifyDate) return false;\n  let d;\n  if (c.abNotifyDate) d = new Date(c.abNotifyDate);\n  else { d = new Date(c.abEnd); d.setDate(d.getDate()+1); }\n  return d.toISOString().slice(0,10) <= todayStr;\n}\n\nconst trials = clients\n  .filter(c => c.trial && c.trial.slice(0,10) === todayStr && (c.status==='trial' || c.status==='arrived'))\n  .sort((a,b) => (a.trial||'').localeCompare(b.trial||''));\nconst renewals = clients.filter(needsRenewal);\nconst classesToday = Object.entries(SCHEDULE)\n  .map(([g,slots]) => ({ g, slot: slots.find(s => s.wd === wd) }))\n  .filter(x => x.slot);\n\nconst out = [];\n\n// — дайджест для Элины —\nif (ADMIN_CHAT_ID) {\n  let t = `🔔 <b>Доброе утро! Сегодня ${WD_RU[wd]}, ${fmtDateRu(todayStr)}</b>\\n`;\n  if (classesToday.length) {\n    t += `\\n📅 <b>Занятия сегодня:</b>\\n`;\n    classesToday.forEach(x => { t += `• ${x.g} — ${x.slot.time}\\n`; });\n  } else {\n    t += `\\n📅 Сегодня занятий нет 😊\\n`;\n  }\n  if (trials.length) {\n    t += `\\n🎯 <b>Пробные сегодня (${trials.length}):</b>\\n`;\n    trials.forEach(c => { t += `• ${c.trial.slice(11,16)} — ${c.name} (${c.group||'?'})\\n`; });\n  }\n  if (renewals.length) {\n    t += `\\n💳 <b>Продления абонементов (${renewals.length}):</b>\\n`;\n    renewals.forEach(c => { t += `• ${c.abChild || c.name} — закончился ${fmtDateRu(c.abEnd)}\\n`; });\n  }\n  if (!trials.length && !renewals.length) {\n    t += `\\n🌊 Пробных и продлений нет — можно выдохнуть!`;\n  }\n  out.push({ json: { chatId: ADMIN_CHAT_ID, text: t } });\n}\n\n// — напоминания в чаты групп о занятии сегодня —\nclassesToday.forEach(x => {\n  const chatId = GROUP_CHATS[x.g];\n  if (!chatId) return;\n  out.push({ json: { chatId, text: `🌊 Напоминаем: сегодня занятие группы «<b>${x.g}</b>» в <b>${x.slot.time}</b>!\\nЖдём всех на танцах 💃✨` } });\n});\n\nreturn out;"
+      },
+      "id": "code-digest-1",
+      "name": "Собрать сообщения",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-send-1",
+      "name": "Отправить в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [660, 0]
+    }
+  ],
+  "connections": {
+    "Каждый день в 10:00": {
+      "main": [
+        [
+          {
+            "node": "CRM из Firebase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM из Firebase": {
+      "main": [
+        [
+          {
+            "node": "Собрать сообщения",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Собрать сообщения": {
+      "main": [
+        [
+          {
+            "node": "Отправить в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Moscow"
+  },
+  "active": false,
+  "pinData": {}
+}

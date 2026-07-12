@@ -39,6 +39,16 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
 | `later`    | Coming back later                    |
 | `declined` | Not interested                       |
 
+## Telegram Bot (n8n)
+
+- Bot runs on the user's own **n8n server** — workflows stored in `bot/n8n/`:
+  - `oceanmove-daily.json`: morning digest (10:00 MSK) to admin + class-day reminders to parent group chats
+  - `oceanmove-commands.json`: replies to `/today`, `/trials`, `/renewals`, `/id`, `/help`
+- Setup instructions: `bot/README.md`
+- Bot reads the same Firebase `crm.json` as the CRM; renewal logic mirrors `isAbonementEndToday()` in `crm.html`
+- The `SCHEDULE` constant inside both workflow Code nodes mirrors the studio schedule above — update all copies when the schedule changes
+- Chat IDs are configured inside the «Собрать сообщения» Code node on the n8n server (not in the repo)
+
 ## Patch History
 
 - `patch_fix_schedule_july9_v1` (55s): Aligns future trial dates for `trial`-status clients to valid schedule slots
