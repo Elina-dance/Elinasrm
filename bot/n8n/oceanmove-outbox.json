@@ -1,0 +1,81 @@
+{
+  "name": "OceanMove — ответы админа родителям",
+  "nodes": [
+    {
+      "id": "cron-outbox",
+      "name": "Каждую минуту",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "get-outbox",
+      "name": "Очередь на отправку",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [220, 0],
+      "parameters": {
+        "url": "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/outbox.json",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "parse-outbox",
+      "name": "Разобрать очередь",
+      "type": "n8n-nodes-base.code",
+      "position": [440, 0],
+      "parameters": {
+        "jsCode": "// Превращаем объект /outbox в отдельные сообщения на отправку\nconst data = $json;\nif (!data || typeof data !== 'object' || Array.isArray(data)) return [];\nconst out = [];\nfor (const key of Object.keys(data)) {\n  const it = data[key] || {};\n  if (!it.chatId || !it.text) continue;\n  out.push({ json: { key, chatId: it.chatId, text: it.text } });\n}\nreturn out;"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "tg-send-admin",
+      "name": "Отправить родителю",
+      "type": "n8n-nodes-base.telegram",
+      "position": [660, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "del-outbox",
+      "name": "Убрать из очереди",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [880, 0],
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/outbox/{{ $('Разобрать очередь').item.json.key }}.json",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "sticky-outbox",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-40, -220],
+      "parameters": {
+        "width": 960,
+        "height": 170,
+        "content": "## 📤 Ответы админа родителям\nКогда в CRM («Диалоги бота») ты пишешь родителю и жмёшь ➤ — сообщение падает в Firebase /outbox. Этот воркфлоу раз в минуту забирает очередь и отправляет от имени бота, потом чистит очередь.\n\n**Настройка:** в ноде «Отправить родителю» выбери Telegram credential. Publish + Active."
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Каждую минуту": { "main": [[{ "node": "Очередь на отправку", "type": "main", "index": 0 }]] },
+    "Очередь на отправку": { "main": [[{ "node": "Разобрать очередь", "type": "main", "index": 0 }]] },
+    "Разобрать очередь": { "main": [[{ "node": "Отправить родителю", "type": "main", "index": 0 }]] },
+    "Отправить родителю": { "main": [[{ "node": "Убрать из очереди", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {}
+}
