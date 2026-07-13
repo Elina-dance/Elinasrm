@@ -4263,7 +4263,9 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{
 const FB_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json';
 const INBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json';
 const CHATS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/chats.json';
+const OUTBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/outbox.json';
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
+let botChatsCache = []; // последние загруженные диалоги (для отправки ответа админом)
 let tgSyncTimer = null;
 let _fbConnected = false;
 let _fbSSE = null;
@@ -4442,6 +4444,7 @@ async function openBotChats() {
     const data = resp.ok ? await resp.json() : null;
     const chats = data ? Object.keys(data).map(k => ({ chatId: k, ...data[k] })) : [];
     chats.sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+    botChatsCache = chats;
     renderBotChats(chats);
   } catch (e) {
     list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--orange);">Не удалось загрузить переписки</div>';
@@ -4476,9 +4479,41 @@ function renderBotChats(chats) {
       ${paused
         ? `<button onclick="toggleChatPause('${chat.chatId}',false)" style="width:100%;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">▶️ Вернуть боту</button>`
         : `<button onclick="toggleChatPause('${chat.chatId}',true)" style="width:100%;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">🙋 Взять на себя (бот замолчит)</button>`}
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <textarea id="admin-msg-${chat.chatId}" rows="1" placeholder="Написать родителю от студии…" style="flex:1;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box;"></textarea>
+        <button onclick="sendAdminMsg('${chat.chatId}')" style="background:var(--wave);color:white;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:700;cursor:pointer;">➤</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Отправка сообщения ставит бота на паузу — дальше отвечаешь ты</div>
     </div>`;
   });
   list.innerHTML = h;
+}
+
+// Отправить сообщение родителю от студии (через бота): пишем в /chats (для истории) + в /outbox (n8n доставит)
+async function sendAdminMsg(chatId) {
+  const inp = document.getElementById('admin-msg-' + chatId);
+  const text = (inp && inp.value || '').trim();
+  if (!text) return;
+  const chat = botChatsCache.find(c => c.chatId === chatId);
+  const messages = (chat && Array.isArray(chat.messages)) ? chat.messages.slice() : [];
+  messages.push({ role: 'assistant', text });
+  try {
+    // история + пауза (сообщение админа = взять чат на себя)
+    await fetch(CHATS_URL.replace('.json', '/' + chatId + '.json'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, paused: true, updated: new Date().toISOString() })
+    });
+    // очередь на отправку — бот доставит родителю
+    await fetch(OUTBOX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, text, created: new Date().toISOString() })
+    });
+  } catch (e) {}
+  if (inp) inp.value = '';
+  showToast('➤ Отправлено родителю');
+  openBotChats();
 }
 
 async function toggleChatPause(chatId, pause) {
