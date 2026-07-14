@@ -26,6 +26,7 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
 - Firebase Realtime DB: `https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json`
 - localStorage key: `ocean_crm_v3` (clients), `ocean_last_save` (timestamp), `ocean_bonuses` (bonuses)
 - «🎁 Бонусы» tab: standalone loyalty ledger in Firebase `/bonuses` (array of {id,name,qty,spent,reward}); Остаток = qty−spent computed; `loadBonuses`/`saveBonuses`/`renderBonuses` in crm.html
+- «🕺 Взрослые» tab: adult pre-signup list in Firebase `/adults` (array of {id,name,contact,notes}); `loadAdults`/`saveAdults`/`renderAdults`; @nick→Telegram / phone→WhatsApp link
 - `INITIAL_DATA` in HTML = 259 clients (compact JSON, embedded for offline load)
 
 ## Client Statuses
