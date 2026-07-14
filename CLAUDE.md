@@ -24,7 +24,8 @@ Any patch, date-alignment, or calendar logic MUST use these slots.
   git push origin claude/crm-card-import-preserve-k1ev6r:main
   ```
 - Firebase Realtime DB: `https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json`
-- localStorage key: `ocean_crm_v3` (clients), `ocean_last_save` (timestamp)
+- localStorage key: `ocean_crm_v3` (clients), `ocean_last_save` (timestamp), `ocean_bonuses` (bonuses)
+- «🎁 Бонусы» tab: standalone loyalty ledger in Firebase `/bonuses` (array of {id,name,qty,spent,reward}); Остаток = qty−spent computed; `loadBonuses`/`saveBonuses`/`renderBonuses` in crm.html
 - `INITIAL_DATA` in HTML = 259 clients (compact JSON, embedded for offline load)
 
 ## Client Statuses
