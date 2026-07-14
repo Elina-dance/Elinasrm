@@ -836,6 +836,7 @@ const TABS_CFG = [
   { id:'calendar',     label:'📅 Календарь' },
   { id:'active',       label:'🎓 Действующие' },
   { id:'bonuses',      label:'🎁 Бонусы' },
+  { id:'adults',       label:'🕺 Взрослые' },
   { id:'all',          label:'Все' },
   { id:'overdue_hub',  label:'🔴 Просроченные' },
   { id:'later_hub',    label:'⏳ Вернутся' },
@@ -887,6 +888,7 @@ function renderCurrentTab() {
   else if (activeTab==='calendar') renderCalendar();
   else if (activeTab==='active') renderActive();
   else if (activeTab==='bonuses') renderBonuses();
+  else if (activeTab==='adults') renderAdults();
   else if (activeTab==='overdue_hub') renderOverdueHub();
   else if (activeTab==='later_hub') renderLaterHub();
   else if (activeTab==='declined_hub') renderDeclinedHub();
@@ -1077,6 +1079,7 @@ function render() {
   if (activeTab==='calendar') { renderCalendar(); return; }
   if (activeTab==='active') { renderActive(); return; }
   if (activeTab==='bonuses') { renderBonuses(); return; }
+  if (activeTab==='adults') { renderAdults(); return; }
   if (activeTab==='overdue_hub') { renderOverdueHub(); return; }
   if (activeTab==='later_hub') { renderLaterHub(); return; }
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
@@ -4274,6 +4277,8 @@ const CHATS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedat
 const OUTBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/outbox.json';
 const BONUSES_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/bonuses.json';
 let bonuses = []; // бонусы учеников [{id, name, qty, spent, reward}]
+const ADULTS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/adults.json';
+let adults = []; // база взрослых (предзапись) [{id, name, contact, notes}]
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let botChatsCache = []; // последние загруженные диалоги (для отправки ответа админом)
 let tgSyncTimer = null;
@@ -4335,6 +4340,7 @@ async function loadFromFirebase() {
     startSSE();
     loadBotInbox(true);
     loadBonuses(true);
+    loadAdults(true);
     setInterval(() => loadBotInbox(true), 60000);
   } catch(e) {
     clearTimeout(fbTimeout);
@@ -4621,6 +4627,93 @@ function renderBonuses() {
   html += `</tbody></table></div>
   <datalist id="reward-opts"><option>Ничего</option><option>Браслет</option><option>Кружка</option></datalist>
   <div style="font-size:11px;color:var(--muted);margin-top:10px;">Остаток считается автоматически (Кол-во − Списано). Изменения сохраняются сразу.</div>`;
+  el.innerHTML = html;
+}
+
+// ============ БАЗА ВЗРОСЛЫХ (предзапись, Firebase /adults) ============
+async function loadAdults(rerender) {
+  try {
+    const resp = await fetch(ADULTS_URL);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data)) { adults = data; localStorage.setItem('ocean_adults', JSON.stringify(adults)); }
+    }
+  } catch (e) {
+    try { adults = JSON.parse(localStorage.getItem('ocean_adults') || '[]'); } catch (e2) {}
+  }
+  if (rerender && activeTab === 'adults') renderCurrentTab();
+}
+
+function saveAdults() {
+  localStorage.setItem('ocean_adults', JSON.stringify(adults));
+  fetch(ADULTS_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adults) }).catch(() => {});
+}
+
+function addAdultRow() {
+  const id = adults.length ? Math.max(...adults.map(a => a.id || 0)) + 1 : 1;
+  adults.unshift({ id, name: '', contact: '', notes: '' });
+  saveAdults();
+  renderCurrentTab();
+}
+
+function updateAdult(id, field, value) {
+  const a = adults.find(x => x.id === id); if (!a) return;
+  a[field] = value;
+  saveAdults();
+}
+
+function deleteAdultRow(id) {
+  const a = adults.find(x => x.id === id);
+  if (!confirm('Удалить ' + (a && a.name ? a.name : 'запись') + ' из базы взрослых?')) return;
+  adults = adults.filter(x => x.id !== id);
+  saveAdults();
+  renderCurrentTab();
+}
+
+// Ссылка «написать» по контакту: @ник → Telegram, телефон → WhatsApp
+function adultContactLink(contact) {
+  const c = (contact || '').trim();
+  if (!c) return '';
+  if (c.startsWith('@')) return `<a href="https://t.me/${c.slice(1)}" target="_blank" style="background:#229ED9;color:white;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;">✈️ Telegram</a>`;
+  const digits = c.replace(/\D/g, '');
+  if (digits.length >= 10) return `<a href="https://wa.me/7${digits.replace(/^[78]/,'')}" target="_blank" style="background:#25d366;color:white;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;">💬 WhatsApp</a>`;
+  return '';
+}
+
+function renderAdults() {
+  const el = document.getElementById('content');
+  const q = getSearchQuery();
+  const rows = adults.filter(a => !q || (a.name || '').toLowerCase().includes(q) || (a.contact || '').toLowerCase().includes(q) || (a.notes || '').toLowerCase().includes(q));
+  const esc = s => (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+  let html = `<div class="remind-hero">
+    <div class="date-big">🕺 База взрослых</div>
+    <div class="date-sub">Предзапись — приглашать в новый набор · ${adults.length} чел</div>
+  </div>
+  <div style="margin-bottom:12px;">
+    <button onclick="addAdultRow()" style="background:#43a047;color:white;border:none;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;">➕ Добавить взрослого</button>
+  </div>`;
+
+  if (!rows.length) {
+    html += `<div style="text-align:center;padding:40px 20px;color:var(--muted);">Пока пусто. Нажми «Добавить взрослого» 🌊</div>`;
+    el.innerHTML = html; return;
+  }
+
+  const inp = 'width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:9px;font-size:14px;font-family:inherit;';
+  rows.forEach(a => {
+    html += `<div class="remind-card" style="border:1.5px solid #e0e0e0;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <input value="${esc(a.name)}" onchange="updateAdult(${a.id},'name',this.value)" placeholder="Данные клиента (имя, возраст…)" style="${inp}font-weight:700;">
+        <button onclick="deleteAdultRow(${a.id})" style="background:none;border:none;cursor:pointer;font-size:16px;flex-shrink:0;">🗑️</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <input value="${esc(a.contact)}" onchange="updateAdult(${a.id},'contact',this.value)" placeholder="Контакт или @ник" style="${inp}">
+        ${adultContactLink(a.contact)}
+      </div>
+      <textarea onchange="updateAdult(${a.id},'notes',this.value)" placeholder="Комментарий" rows="2" style="${inp}resize:vertical;">${esc(a.notes)}</textarea>
+    </div>`;
+  });
+  html += `<div style="font-size:11px;color:var(--muted);margin-top:6px;">Изменения сохраняются сразу. По @нику или телефону — кнопка написать.</div>`;
   el.innerHTML = html;
 }
 
