@@ -2923,8 +2923,13 @@ const ARCHIVE_KEY = 'ocean_month_archive';
 function getMonthArchive(monthKey) {
   try {
     const all = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || '{}');
-    if (!all[monthKey]) all[monthKey] = { bought: [], left: [], startCount: 0, endCount: 0 };
-    return all[monthKey];
+    const a = all[monthKey] || {};
+    // Достраиваем недостающие поля (архивы старых версий могли быть без left/bought)
+    if (!Array.isArray(a.bought)) a.bought = [];
+    if (!Array.isArray(a.left)) a.left = [];
+    if (typeof a.startCount !== 'number') a.startCount = 0;
+    if (typeof a.endCount !== 'number') a.endCount = 0;
+    return a;
   } catch(e) { return { bought: [], left: [], startCount: 0, endCount: 0 }; }
 }
 
