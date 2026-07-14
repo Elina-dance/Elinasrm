@@ -835,6 +835,7 @@ const TABS_CFG = [
   { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'calendar',     label:'📅 Календарь' },
   { id:'active',       label:'🎓 Действующие' },
+  { id:'bonuses',      label:'🎁 Бонусы' },
   { id:'all',          label:'Все' },
   { id:'overdue_hub',  label:'🔴 Просроченные' },
   { id:'later_hub',    label:'⏳ Вернутся' },
@@ -885,6 +886,7 @@ function renderCurrentTab() {
   else if (activeTab==='trial_hub') renderTrialHub();
   else if (activeTab==='calendar') renderCalendar();
   else if (activeTab==='active') renderActive();
+  else if (activeTab==='bonuses') renderBonuses();
   else if (activeTab==='overdue_hub') renderOverdueHub();
   else if (activeTab==='later_hub') renderLaterHub();
   else if (activeTab==='declined_hub') renderDeclinedHub();
@@ -1074,6 +1076,7 @@ function render() {
   if (activeTab==='trial_hub') { renderTrialHub(); return; }
   if (activeTab==='calendar') { renderCalendar(); return; }
   if (activeTab==='active') { renderActive(); return; }
+  if (activeTab==='bonuses') { renderBonuses(); return; }
   if (activeTab==='overdue_hub') { renderOverdueHub(); return; }
   if (activeTab==='later_hub') { renderLaterHub(); return; }
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
@@ -4269,6 +4272,8 @@ const FB_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedataba
 const INBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json';
 const CHATS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/chats.json';
 const OUTBOX_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/outbox.json';
+const BONUSES_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/bonuses.json';
+let bonuses = []; // бонусы учеников [{id, name, qty, spent, reward}]
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let botChatsCache = []; // последние загруженные диалоги (для отправки ответа админом)
 let tgSyncTimer = null;
@@ -4329,6 +4334,7 @@ async function loadFromFirebase() {
     }
     startSSE();
     loadBotInbox(true);
+    loadBonuses(true);
     setInterval(() => loadBotInbox(true), 60000);
   } catch(e) {
     clearTimeout(fbTimeout);
@@ -4531,6 +4537,91 @@ async function toggleChatPause(chatId, pause) {
   } catch (e) {}
   showToast(pause ? '🙋 Чат за тобой — бот замолчал' : '🤖 Бот снова отвечает');
   openBotChats();
+}
+
+// ============ БОНУСЫ УЧЕНИКОВ (Firebase /bonuses) ============
+async function loadBonuses(rerender) {
+  try {
+    const resp = await fetch(BONUSES_URL);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data)) { bonuses = data; localStorage.setItem('ocean_bonuses', JSON.stringify(bonuses)); }
+    }
+  } catch (e) {
+    try { bonuses = JSON.parse(localStorage.getItem('ocean_bonuses') || '[]'); } catch (e2) {}
+  }
+  if (rerender && activeTab === 'bonuses') renderCurrentTab();
+}
+
+function saveBonuses() {
+  localStorage.setItem('ocean_bonuses', JSON.stringify(bonuses));
+  fetch(BONUSES_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bonuses) }).catch(() => {});
+}
+
+function addBonusRow() {
+  const id = bonuses.length ? Math.max(...bonuses.map(b => b.id || 0)) + 1 : 1;
+  bonuses.push({ id, name: '', qty: 0, spent: 0, reward: 'Ничего' });
+  saveBonuses();
+  renderCurrentTab();
+}
+
+function updateBonus(id, field, value) {
+  const b = bonuses.find(x => x.id === id); if (!b) return;
+  if (field === 'qty' || field === 'spent') value = Number(value) || 0;
+  b[field] = value;
+  saveBonuses();
+  if (activeTab === 'bonuses') renderCurrentTab();
+}
+
+function deleteBonusRow(id) {
+  const b = bonuses.find(x => x.id === id);
+  if (!confirm('Удалить ' + (b && b.name ? b.name : 'строку') + ' из бонусов?')) return;
+  bonuses = bonuses.filter(x => x.id !== id);
+  saveBonuses();
+  renderCurrentTab();
+}
+
+function renderBonuses() {
+  const el = document.getElementById('content');
+  const q = getSearchQuery();
+  const rows = bonuses.filter(b => !q || (b.name || '').toLowerCase().includes(q));
+  const totalRemain = bonuses.reduce((s, b) => s + (Number(b.qty) || 0) - (Number(b.spent) || 0), 0);
+  const esc = s => (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+  let html = `<div class="remind-hero">
+    <div class="date-big">🎁 Бонусы учеников</div>
+    <div class="date-sub">${bonuses.length} чел · остаток всего: ${totalRemain}</div>
+  </div>
+  <div style="margin-bottom:10px;">
+    <button onclick="addBonusRow()" style="background:#43a047;color:white;border:none;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;">➕ Добавить ученика</button>
+  </div>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px;">
+      <thead><tr style="background:#e8f5e9;color:#2e7d32;">
+        <th style="text-align:left;padding:8px;border:1px solid #c8e6c9;">Имя</th>
+        <th style="padding:8px;border:1px solid #c8e6c9;width:80px;">Кол-во</th>
+        <th style="padding:8px;border:1px solid #c8e6c9;width:80px;">Списано</th>
+        <th style="padding:8px;border:1px solid #c8e6c9;width:110px;">Что взяли</th>
+        <th style="padding:8px;border:1px solid #c8e6c9;width:70px;">Остаток</th>
+        <th style="padding:8px;border:1px solid #c8e6c9;width:36px;"></th>
+      </tr></thead><tbody>`;
+
+  const inp = 'width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px;font-size:13px;';
+  rows.forEach(b => {
+    const remain = (Number(b.qty) || 0) - (Number(b.spent) || 0);
+    html += `<tr>
+      <td style="padding:4px;border:1px solid #eee;"><input value="${esc(b.name)}" onchange="updateBonus(${b.id},'name',this.value)" style="${inp}"></td>
+      <td style="padding:4px;border:1px solid #eee;"><input type="number" value="${Number(b.qty)||0}" onchange="updateBonus(${b.id},'qty',this.value)" style="${inp}text-align:center;"></td>
+      <td style="padding:4px;border:1px solid #eee;"><input type="number" value="${Number(b.spent)||0}" onchange="updateBonus(${b.id},'spent',this.value)" style="${inp}text-align:center;"></td>
+      <td style="padding:4px;border:1px solid #eee;"><input value="${esc(b.reward)}" list="reward-opts" onchange="updateBonus(${b.id},'reward',this.value)" style="${inp}"></td>
+      <td style="padding:4px;border:1px solid #eee;text-align:center;font-weight:700;color:${remain>0?'#43a047':'var(--muted)'};">${remain}</td>
+      <td style="padding:4px;border:1px solid #eee;text-align:center;"><button onclick="deleteBonusRow(${b.id})" style="background:none;border:none;cursor:pointer;font-size:15px;">🗑️</button></td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>
+  <datalist id="reward-opts"><option>Ничего</option><option>Браслет</option><option>Кружка</option></datalist>
+  <div style="font-size:11px;color:var(--muted);margin-top:10px;">Остаток считается автоматически (Кол-во − Списано). Изменения сохраняются сразу.</div>`;
+  el.innerHTML = html;
 }
 
 async function ghSave() { await fbSave(); }
