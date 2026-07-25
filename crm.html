@@ -2825,8 +2825,15 @@ function saveAbonement() {
 // Проверяем: сегодня день уведомления об окончании абонемента?
 function isAbonementEndToday(c) {
   if (c.status !== 'bought') return false;
-  if (c.abRenewalPaid) return false;
   if (!c.abEnd && !c.abNotifyDate) return false;
+
+  // Галочка «оплата принята» скрывает напоминание только пока абонемент ещё действует.
+  // Как только abEnd прошёл — период закончился, и напоминание нужно показать снова,
+  // даже если галочка осталась стоять с прошлой оплаты.
+  if (c.abRenewalPaid) {
+    if (!c.abEnd) return false;                        // нет даты конца — считаем оплаченным
+    if (new Date(c.abEnd) >= todayStart()) return false; // абонемент ещё действует
+  }
 
   // Проверяем abNotifyDate или следующий день после abEnd
   const checkDate = c.abNotifyDate
