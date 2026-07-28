@@ -4390,6 +4390,21 @@ async function fbSave() {
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
+    // Защита от затирания: если в облаке карточек больше (другая вкладка или
+    // устройство успели что-то добавить), подтягиваем недостающие к себе ПЕРЕД
+    // сохранением — чтобы устаревшая вкладка не стёрла чужие новые карточки.
+    try {
+      const cur = await fetch(FB_URL).then(r => r.ok ? r.json() : null);
+      if (cur && Array.isArray(cur.clients) && cur.clients.length > clients.length) {
+        const localIds = new Set(clients.map(c => c.id));
+        const missing = cur.clients.filter(c => !localIds.has(c.id));
+        if (missing.length) {
+          clients = clients.concat(missing);
+          localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+          renderTabs(); renderCurrentTab();
+        }
+      }
+    } catch(_) { /* нет связи — сохраняем как есть */ }
     const now = Date.now();
     localStorage.setItem('ocean_last_save', now.toString());
     const payload = {
