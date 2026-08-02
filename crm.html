@@ -1425,6 +1425,68 @@ function renderBotInboxBlock() {
   return h;
 }
 
+// Карточка звонка для напоминаний. isOv=true — просроченная (звонок был раньше, не отработан).
+function callCardHtml(c, isOv) {
+  const s = STATUS_MAP[c.status] || STATUSES[0];
+  const isArrived = c.status === 'arrived';
+  const isLater = c.status === 'later';
+  const msg = isArrived ? buildFollowupMsg(c) : null;
+  const border = isOv ? 'style="border:2px solid var(--red);background:var(--red-bg);"'
+                      : (isLater ? 'style="border:2px solid var(--purple);background:var(--purple-bg);"' : '');
+  const dateTag = isOv
+    ? `<span class="meta-tag overdue" style="border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">🔴 Просрочено: ${fmtDT(c.nextCall)}</span>`
+    : `<span style="background:var(--yellow-bg);color:var(--orange);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📅 ${isLater?'Обещали вернуться сегодня':'Звонок сегодня в '+fmtTime(c.nextCall)}</span>`;
+  return `<div class="remind-card" ${border}>
+        <div class="remind-card-top">
+          <div class="remind-name">${c.name}</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="${s.pill};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${s.label}</span>
+            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
+          ${dateTag}
+        </div>
+        ${isLater?`<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--purple);font-weight:600;">⏳ Они обещали вернуться — самое время написать!</div>`:''}
+        ${c.notes?`<div class="card-notes" style="margin-bottom:10px;">${c.notes}</div>`:''}
+        ${isArrived && msg ? `<div class="msg-box" style="margin-bottom:10px;">${msg}</div>` : ''}
+        ${(() => {
+          const dueTasks = (c.tasks||[]).filter(t => !t.done && new Date(t.date) < tomorrowStart());
+          return dueTasks.map(t => `<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('');
+        })()}
+        ${contactButtons(c, true, msg || '')}
+        ${isArrived ? `
+        <div style="border-top:1px solid var(--border);padding-top:10px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перезвонить</button>
+            <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
+          </div>
+          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
+        </div>` : isLater ? `
+        <div style="border-top:1px solid var(--border);padding-top:10px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="quickStatus(${c.id},'trial',0)" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🎯 Записались!</button>
+            <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
+            <button onclick="changeStatusInline(${c.id},'later')" style="flex:1;background:var(--purple-bg);color:var(--purple);border:1.5px solid var(--purple);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">⏳ Перенести</button>
+            <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
+          </div>
+        </div>` : `
+        <div style="border-top:1px solid var(--border);padding-top:10px;">
+          <div style="display:flex;gap:8px;">
+            <button onclick="openTrialModal(${c.id})" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🎯</button>
+            <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Итог</button>
+            <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
+            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
+          </div>
+        </div>`}
+      </div>`;
+}
+
 function renderReminders() {
   const el = document.getElementById('content');
   const q = getSearchQuery();
@@ -1436,6 +1498,15 @@ function renderReminders() {
   const trialIds = new Set(trialList.map(c=>c.id));
   const callList = clients.filter(c => hasTodayCall(c) && !trialIds.has(c.id) && matchesSearch(c,q))
     .sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
+  // Просроченные звонки за последние 30 дней — остаются в напоминаниях, пока не отработаешь
+  const _ovWin = todayStart(); _ovWin.setDate(_ovWin.getDate() - 30);
+  const overdueCall = clients.filter(c => {
+    if (['bought','declined','left'].includes(c.status)) return false;
+    if (trialIds.has(c.id) || hasTodayCall(c)) return false;
+    if (!matchesSearch(c,q) || !c.nextCall) return false;
+    const dt = new Date(c.nextCall);
+    return dt < todayStart() && dt >= _ovWin;
+  }).sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
   // Блок абонементов — вычисляем ДО early return, чтобы учесть в счётчике
   const abonEndToday = clients.filter(c => isAbonementEndToday(c) && matchesSearch(c,q));
   // Новые ни разу не тронутые — всегда в напоминаниях пока статус не изменится
@@ -1449,7 +1520,7 @@ function renderReminders() {
   // Постоянный список: дошли на пробное, но не купили
   const arrivedNoB = clients.filter(c => c.status === 'arrived' && matchesSearch(c, q));
 
-  const totalToday = trialList.length + callList.length + abonEndToday.length + newUntouched.length;
+  const totalToday = trialList.length + callList.length + overdueCall.length + abonEndToday.length + newUntouched.length;
 
   let html = `<div class="remind-hero">
     <div class="date-big">🔔 Сегодня ${totalToday > 0 ? totalToday + ' задач' : ''}</div>
@@ -1568,63 +1639,19 @@ function renderReminders() {
       <div style="flex:1;height:2px;background:linear-gradient(to left,var(--wave),transparent);"></div>
     </div>`;
 
-    callList.forEach(c => {
-      const s = STATUS_MAP[c.status] || STATUSES[0];
-      const isArrived = c.status === 'arrived';
-      const isLater = c.status === 'later';
-      const msg = isArrived ? buildFollowupMsg(c) : null;
-
-      html += `<div class="remind-card" ${isLater?'style="border:2px solid var(--purple);background:var(--purple-bg);"':''}>
-        <div class="remind-card-top">
-          <div class="remind-name">${c.name}</div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            <span style="${s.pill};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${s.label}</span>
-            <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
-            <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
-          </div>
-        </div>
-        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
-          ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
-          <span style="background:var(--yellow-bg);color:var(--orange);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📅 ${isLater?'Обещали вернуться сегодня':'Звонок сегодня в '+fmtTime(c.nextCall)}</span>
-        </div>
-        ${isLater?`<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--purple);font-weight:600;">⏳ Они обещали вернуться — самое время написать!</div>`:''}
-        ${c.notes?`<div class="card-notes" style="margin-bottom:10px;">${c.notes}</div>`:''}
-        ${isArrived && msg ? `<div class="msg-box" style="margin-bottom:10px;">${msg}</div>` : ''}
-        ${(() => {
-          const todayTasks = (c.tasks||[]).filter(t => { const d=new Date(t.date); return !t.done && d>=todayStart() && d<tomorrowStart(); });
-          return todayTasks.map(t => `<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('');
-        })()}
-        ${contactButtons(c, true, msg || '')}
-        ${isArrived ? `
-        <div style="border-top:1px solid var(--border);padding-top:10px;">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Перезвонить</button>
-            <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
-          </div>
-          ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
-        </div>` : isLater ? `
-        <div style="border-top:1px solid var(--border);padding-top:10px;">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;">ПОСЛЕ ЗВОНКА — отметить:</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button onclick="quickStatus(${c.id},'trial',0)" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🎯 Записались!</button>
-            <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-            <button onclick="changeStatusInline(${c.id},'later')" style="flex:1;background:var(--purple-bg);color:var(--purple);border:1.5px solid var(--purple);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">⏳ Перенести</button>
-            <button onclick="quickStatus(${c.id},'declined',0)" style="flex:1;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
-          </div>
-        </div>` : `
-        <div style="border-top:1px solid var(--border);padding-top:10px;">
-          <div style="display:flex;gap:8px;">
-            <button onclick="openTrialModal(${c.id})" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🎯</button>
-            <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;">✏️ Итог</button>
-            <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
-            <button onclick="changeStatusInline(${c.id},'callback')" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
-          </div>
-        </div>`}
-      </div>`;
-    });
+    callList.forEach(c => { html += callCardHtml(c, false); });
     html += `</div>`;
+  }
+
+  // ── БЛОК 3b: Просроченные звонки — остаются, пока не отработаешь ──
+  if (overdueCall.length > 0) {
+    html += `<div style="margin-top:20px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:2px;background:linear-gradient(to right,var(--red),transparent);"></div>
+      <div style="background:var(--red);color:white;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;white-space:nowrap;">🔴 Просроченные звонки (${overdueCall.length})</div>
+      <div style="flex:1;height:2px;background:linear-gradient(to left,var(--red),transparent);"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;">Не дозвонилась вовремя — остаются здесь, пока не отработаешь</div>`;
+    overdueCall.forEach(c => { html += callCardHtml(c, true); });
   }
 
   // ── БЛОК 4: Новые ни разу не тронутые ──
