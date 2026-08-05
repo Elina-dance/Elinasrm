@@ -215,7 +215,7 @@
     <div class="logo">🌊</div>
     <div class="header-title">
       <h1>Движение Океана</h1>
-      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v18</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
+      <p>CRM · Сочи · <span id="sync-status" style="color:#a5d6a7;font-size:10px;">синхронизировано</span> <span style="color:#5ab4f0;font-size:10px;font-weight:700;">v18</span> <span onclick="showFbKeyPrompt()" style="cursor:pointer;font-size:10px;" title="Сменить ключ доступа">🔑</span> <span id="ls-debug" style="color:#ffd54f;font-size:9px;"></span></p>
       <div id="tg-sync-bar" style="margin-top:3px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;">
         <span id="tg-sync-icon">☁️</span>
         <span id="tg-sync-text" style="color:#a5d6a7;">ожидание...</span>
@@ -802,6 +802,44 @@
 </div>
 
 <script>
+// ============ КЛЮЧ ДОСТУПА К БАЗЕ (Firebase) ============
+// Ключ НЕ хранится в коде. Вводится один раз на устройстве и лежит в localStorage.
+// Все запросы к базе автоматически уходят с ?auth=<ключ>.
+const FB_HOST = 'ocean-crm-c8bcf-default-rtdb';
+let FB_KEY = localStorage.getItem('ocean_fb_key') || '';
+(function(){
+  function withKey(u){
+    if (typeof u === 'string' && u.indexOf(FB_HOST) !== -1 && FB_KEY) {
+      return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'auth=' + encodeURIComponent(FB_KEY);
+    }
+    return u;
+  }
+  const of = window.fetch.bind(window);
+  window.fetch = function(u, o){ return of(withKey(u), o); };
+  if (window.EventSource) {
+    const OE = window.EventSource;
+    const NE = function(u, c){ return new OE(withKey(u), c); };
+    NE.prototype = OE.prototype;
+    window.EventSource = NE;
+  }
+})();
+function saveFbKey(v){ FB_KEY = (v||'').trim(); localStorage.setItem('ocean_fb_key', FB_KEY); }
+function showFbKeyPrompt(){
+  if (document.getElementById('fb-key-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'fb-key-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,30,50,0.96);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;max-width:360px;width:100%;padding:24px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.4);">'
+    + '<div style="font-size:40px;margin-bottom:10px;">🔑</div>'
+    + '<div style="font-size:17px;font-weight:800;color:#0a3d62;margin-bottom:6px;">Ключ доступа</div>'
+    + '<div style="font-size:13px;color:#555;line-height:1.5;margin-bottom:16px;">Введите ключ доступа к базе. Он сохранится на этом устройстве — вводить нужно один раз.</div>'
+    + '<input id="fb-key-input" type="password" placeholder="Вставьте ключ" style="width:100%;box-sizing:border-box;border:1.5px solid #b0bec5;border-radius:10px;padding:12px;font-size:14px;margin-bottom:12px;">'
+    + '<button onclick="var v=document.getElementById(\'fb-key-input\').value;if(v.trim()){saveFbKey(v);location.reload();}" style="width:100%;background:#0a3d62;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;">Войти</button>'
+    + '</div>';
+  document.body.appendChild(ov);
+  setTimeout(function(){ var i = document.getElementById('fb-key-input'); if (i) i.focus(); }, 100);
+}
+
 // ============ STATUSES ============
 const STATUSES = [
   { id:'new',        label:'🆕 Новый',               cls:'opt-new',        cardCls:'s-new',        pill:'background:#e8f5e9;color:#2e7d32' },
@@ -4362,6 +4400,7 @@ async function loadFromFirebase() {
   try {
     const resp = await fetch(FB_URL);
     clearTimeout(fbTimeout);
+    if (resp.status === 401) { showFbKeyPrompt(); setTgBar('🔑', 'Нужен ключ доступа', '#ffd54f', false); return; }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const cloud = await resp.json();
     _fbConnected = true;
