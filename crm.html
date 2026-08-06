@@ -1552,7 +1552,7 @@ function renderReminders() {
   const newUntouched = clients.filter(c => {
     if (c.status !== 'new') return false;
     if (!matchesSearch(c, q)) return false;
-    const realHistory = (c.history||[]).filter(h => h.result !== 'Клиент добавлен');
+    const realHistory = (c.history||[]).filter(h => !/^Клиент добавлен/.test(h.result || ''));
     return realHistory.length === 0;
   });
   // Постоянный список: дошли на пробное, но не купили
