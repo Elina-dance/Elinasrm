@@ -1554,7 +1554,7 @@ function renderReminders() {
     if (!matchesSearch(c, q)) return false;
     const realHistory = (c.history||[]).filter(h => !/^Клиент добавлен/.test(h.result || ''));
     return realHistory.length === 0;
-  });
+  }).sort((a, b) => (+b.id || 0) - (+a.id || 0)); // свежие (больший id) сверху, старые снизу
   // Постоянный список: дошли на пробное, но не купили
   const arrivedNoB = clients.filter(c => c.status === 'arrived' && matchesSearch(c, q));
 
