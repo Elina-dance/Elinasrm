@@ -13,16 +13,26 @@
       "typeVersion": 1.1
     },
     {
+      "id": "fb-login-lead",
+      "name": "Войти в Firebase",
+      "type": "n8n-nodes-base.code",
+      "position": [130, -80],
+      "parameters": {
+        "jsCode": "// Вход в Firebase (email+пароль) — база закрыта, нужен токен доступа\nconst FB_API_KEY = 'AIzaSyBo3gJb9XIuK_12ZSwTvQkk1XQ-tGI5nYY'; // Web API Key — не секрет\nconst BOT_EMAIL = 'ВСТАВЬ_ПОЧТУ_ДЛЯ_ВХОДА';\nconst BOT_PASSWORD = 'ВСТАВЬ_ПАРОЛЬ_ДЛЯ_ВХОДА';\nconst auth = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + FB_API_KEY,\n  body: { email: BOT_EMAIL, password: BOT_PASSWORD, returnSecureToken: true },\n  json: true\n});\nreturn [{ json: { idToken: auth.idToken } }];"
+      },
+      "typeVersion": 2
+    },
+    {
       "id": "http-firebase-inbox",
       "name": "В CRM (Firebase /inbox)",
       "type": "n8n-nodes-base.httpRequest",
       "position": [260, -80],
       "parameters": {
-        "url": "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json",
+        "url": "=https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/inbox.json?auth={{ $json.idToken }}",
         "method": "POST",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ parent_name: $json.parent_name || '', child_name: $json.child_name || '', child_age: $json.child_age || '', phone: $json.phone || '', group: $json.group || '', notes: $json.notes || '', source: 'telegram', created: $now.toISO() }) }}",
+        "jsonBody": "={{ JSON.stringify({ parent_name: $('Заявка от ассистента').item.json.parent_name || '', child_name: $('Заявка от ассистента').item.json.child_name || '', child_age: $('Заявка от ассистента').item.json.child_age || '', phone: $('Заявка от ассистента').item.json.phone || '', group: $('Заявка от ассистента').item.json.group || '', notes: $('Заявка от ассистента').item.json.notes || '', source: 'telegram', created: $now.toISO() }) }}",
         "options": {}
       },
       "typeVersion": 4.2
@@ -94,7 +104,7 @@
       "parameters": {
         "width": 720,
         "height": 170,
-        "content": "## 💾 Сохранение заявки (вызывается ассистентом как инструмент save_lead)\nПишет заявку сразу в два места:\n• **Firebase /inbox** → появится в CRM в разделе «Заявки из бота»\n• **Google-таблица** → твой отдельный журнал заявок\n\n**Настройка:** в ноде «В Google-таблицу» выбери свой Google credential, свою таблицу и лист. Firebase работает сразу, ничего вписывать не надо."
+        "content": "## 💾 Сохранение заявки (вызывается ассистентом как инструмент save_lead)\nПишет заявку сразу в два места:\n• **Firebase /inbox** → появится в CRM в разделе «Заявки из бота»\n• **Google-таблица** → твой отдельный журнал заявок\n\nБаза Firebase закрыта паролем — эта под-схема сама входит по email+паролю в ноде «Войти в Firebase».\n\n**Настройка:** впиши email+пароль в ноде «Войти в Firebase»; в ноде «В Google-таблицу» выбери свой Google credential, свою таблицу и лист."
       },
       "typeVersion": 1
     }
@@ -103,10 +113,13 @@
     "Заявка от ассистента": {
       "main": [
         [
-          { "node": "В CRM (Firebase /inbox)", "type": "main", "index": 0 },
+          { "node": "Войти в Firebase", "type": "main", "index": 0 },
           { "node": "В Google-таблицу", "type": "main", "index": 0 }
         ]
       ]
+    },
+    "Войти в Firebase": {
+      "main": [[{ "node": "В CRM (Firebase /inbox)", "type": "main", "index": 0 }]]
     },
     "В CRM (Firebase /inbox)": {
       "main": [[{ "node": "Готово", "type": "main", "index": 0 }]]
