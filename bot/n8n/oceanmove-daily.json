@@ -23,7 +23,20 @@
     },
     {
       "parameters": {
-        "url": "https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json",
+        "jsCode": "// Вход в Firebase (email+пароль) — база закрыта, нужен токен доступа\nconst FB_API_KEY = 'AIzaSyBo3gJb9XIuK_12ZSwTvQkk1XQ-tGI5nYY'; // Web API Key — не секрет\nconst BOT_EMAIL = 'ВСТАВЬ_ПОЧТУ_ДЛЯ_ВХОДА';\nconst BOT_PASSWORD = 'ВСТАВЬ_ПАРОЛЬ_ДЛЯ_ВХОДА';\nconst auth = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + FB_API_KEY,\n  body: { email: BOT_EMAIL, password: BOT_PASSWORD, returnSecureToken: true },\n  json: true\n});\nreturn [{ json: { idToken: auth.idToken } }];"
+      },
+      "id": "fb-login-1",
+      "name": "Войти в Firebase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        110,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/crm.json?auth={{ $json.idToken }}",
         "options": {}
       },
       "id": "http-firebase-1",
@@ -71,6 +84,17 @@
   ],
   "connections": {
     "Каждый день в 10:00": {
+      "main": [
+        [
+          {
+            "node": "Войти в Firebase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Войти в Firebase": {
       "main": [
         [
           {
