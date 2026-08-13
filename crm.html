@@ -536,6 +536,12 @@
         <strong id="task-client-name"></strong>
       </div>
       <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="task-is-message" onchange="toggleTaskModalMode()" style="width:18px;height:18px;">
+          <span>✉️ Это отправка сообщения (не звонок) — попадёт во вкладку «Задачи»</span>
+        </label>
+      </div>
+      <div class="form-group" id="task-date-group">
         <label>Дата задачи *</label>
         <input id="task-date" type="datetime-local">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px;">
@@ -548,10 +554,10 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Что нужно сделать * <span style="color:var(--red);font-size:11px;">(обязательно)</span></label>
+        <label id="task-comment-label">Что нужно сделать * <span style="color:var(--red);font-size:11px;">(обязательно)</span></label>
         <textarea id="task-comment" rows="3" placeholder="Например: позвонить уточнить продление, отправить расписание, узнать как прошло занятие..."></textarea>
       </div>
-      <button class="btn-save" onclick="saveTask()" style="background:var(--ocean);">📌 Сохранить задачу</button>
+      <button class="btn-save" id="task-save-btn" onclick="saveTask()" style="background:var(--ocean);">📌 Сохранить задачу</button>
     </div>
   </div>
 </div>
@@ -931,6 +937,7 @@ const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.id,s]));
 
 const TABS_CFG = [
   { id:'remind',       label:'🔔 Напоминания' },
+  { id:'msgtasks',     label:'✉️ Задачи' },
   { id:'obzvon',       label:'📞 Обзвон' },
   { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'calendar',     label:'📅 Календарь' },
@@ -983,6 +990,7 @@ function renderCurrentTab() {
 
   // Маршрутизация в нужный раздел
   if (activeTab==='remind') renderReminders();
+  else if (activeTab==='msgtasks') renderMsgTasksTab();
   else if (activeTab==='obzvon') renderObzvon();
   else if (activeTab==='trial_hub') renderTrialHub();
   else if (activeTab==='calendar') renderCalendar();
@@ -1107,12 +1115,15 @@ function renderTabs() {
   const activeCount = clients.filter(c => c.status === 'bought').length;
   const declinedCount = clients.filter(c => c.status === 'declined').length;
   const overdueCount = clients.filter(isOverdue).length;
+  const msgTaskCount = clients.reduce((s,c)=> s + (c.msgTasks||[]).filter(t=>!t.sent).length, 0);
 
   const el = document.getElementById('tabs');
   el.innerHTML = TABS_CFG.map(t => {
     let badge = '';
     if (t.id === 'remind') {
       if (remindCount > 0) badge = `<span class="badge" style="background:var(--yellow);color:white">${remindCount}</span>`;
+    } else if (t.id === 'msgtasks') {
+      if (msgTaskCount > 0) badge = `<span class="badge" style="background:#7c4dff;color:white">${msgTaskCount}</span>`;
     } else if (t.id === 'obzvon') {
       badge = `<span class="badge badge-default">${obzvonCount}</span>`;
     } else if (t.id === 'trial_hub') {
@@ -1174,6 +1185,7 @@ function render() {
   renderTabs();
   document.getElementById('overdue-banner').classList.toggle('show', clients.filter(isOverdue).length > 0);
   if (activeTab==='remind') { renderReminders(); return; }
+  if (activeTab==='msgtasks') { renderMsgTasksTab(); return; }
   if (activeTab==='obzvon') { renderObzvon(); return; }
   if (activeTab==='trial_hub') { renderTrialHub(); return; }
   if (activeTab==='calendar') { renderCalendar(); return; }
@@ -3561,8 +3573,23 @@ function openTaskModal(id) {
   const c = clients.find(x=>x.id===id); if(!c) return;
   document.getElementById('task-client-name').textContent = c.name;
   document.getElementById('task-comment').value = '';
+  document.getElementById('task-is-message').checked = false;
+  toggleTaskModalMode();
   setTaskPreset(1); // по умолчанию завтра
   document.getElementById('task-modal').classList.add('open');
+}
+
+function toggleTaskModalMode() {
+  const isMsg = document.getElementById('task-is-message').checked;
+  document.getElementById('task-date-group').style.display = isMsg ? 'none' : 'block';
+  document.getElementById('task-comment-label').innerHTML = isMsg
+    ? 'Что отправить * <span style="color:var(--red);font-size:11px;">(обязательно)</span>'
+    : 'Что нужно сделать * <span style="color:var(--red);font-size:11px;">(обязательно)</span>';
+  document.getElementById('task-comment').placeholder = isMsg
+    ? 'Например: отправить расписание и стоимость, прислать адрес и ссылку на тг-канал...'
+    : 'Например: позвонить уточнить продление, отправить расписание, узнать как прошло занятие...';
+  const btn = document.getElementById('task-save-btn');
+  btn.textContent = isMsg ? '✉️ Сохранить задачу' : '📌 Сохранить задачу';
 }
 
 function setTaskPreset(days) {
@@ -3573,12 +3600,25 @@ function setTaskPreset(days) {
 }
 
 function saveTask() {
-  const dateVal = document.getElementById('task-date').value;
+  const isMsg = document.getElementById('task-is-message').checked;
   const comment = document.getElementById('task-comment').value.trim();
-  if (!dateVal) { showToast('⚠️ Выбери дату!'); return; }
-  if (!comment) { showToast('⚠️ Напиши что нужно сделать!'); return; }
+  if (!comment) { showToast(isMsg ? '⚠️ Напиши что отправить!' : '⚠️ Напиши что нужно сделать!'); return; }
 
   const idx = clients.findIndex(x=>x.id===taskTargetId); if(idx<0) return;
+
+  if (isMsg) {
+    if (!clients[idx].msgTasks) clients[idx].msgTasks = [];
+    clients[idx].msgTasks.push({ id: Date.now(), text: comment, createdAt: new Date().toISOString(), sent: false, sentAt: null });
+    clients[idx].updatedAt = new Date().toISOString();
+    save(); updateExportBadge();
+    closeModal('task-modal');
+    showToast('✉️ Задача добавлена во вкладку «Задачи»!');
+    renderCurrentTab();
+    return;
+  }
+
+  const dateVal = document.getElementById('task-date').value;
+  if (!dateVal) { showToast('⚠️ Выбери дату!'); return; }
   const dateRu = new Date(dateVal).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
   const timeRu = fmtTime(dateVal);
 
@@ -3604,6 +3644,69 @@ function saveTask() {
   showToast(`📌 Задача поставлена на ${dateRu}!`);
   renderCurrentTab();
 }
+
+// ============ ВКЛАДКА «ЗАДАЧИ» (сообщения на отправку, не звонки) ============
+function toggleMsgTaskSent(clientId, taskId) {
+  const c = clients.find(x=>x.id===clientId); if(!c) return;
+  const t = (c.msgTasks||[]).find(x=>x.id===taskId); if(!t) return;
+  t.sent = !t.sent;
+  t.sentAt = t.sent ? new Date().toISOString() : null;
+  c.updatedAt = new Date().toISOString();
+  save(); updateExportBadge();
+  renderCurrentTab();
+}
+
+function renderMsgTasksTab() {
+  const el = document.getElementById('content');
+  const q = getSearchQuery();
+  const rows = [];
+  clients.forEach(c => {
+    (c.msgTasks||[]).forEach(t => {
+      if (q && !matchesSearch(c, q)) return;
+      rows.push({ c, t });
+    });
+  });
+  const pending = rows.filter(r => !r.t.sent).sort((a,b)=> b.t.id - a.t.id);
+  const sent = rows.filter(r => r.t.sent).sort((a,b)=> new Date(b.t.sentAt||0) - new Date(a.t.sentAt||0));
+
+  const row = ({c,t}) => `<div class="remind-card" style="${t.sent?'opacity:0.65;':'border:2px solid #7c4dff;background:#f3e8ff;'}">
+    <div style="display:flex;gap:10px;align-items:flex-start;">
+      <input type="checkbox" ${t.sent?'checked':''} onclick="event.stopPropagation();toggleMsgTaskSent(${c.id},${t.id})" style="width:22px;height:22px;margin-top:2px;flex-shrink:0;cursor:pointer;">
+      <div style="flex:1;cursor:pointer;" onclick="openEditModal(${c.id})">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px;${t.sent?'text-decoration:line-through;color:var(--muted);':''}">${c.name}</div>
+        <div style="font-size:13px;color:${t.sent?'var(--muted)':'#4a148c'};line-height:1.5;">${t.text}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">${t.sent?'✅ Отправлено '+fmtDT(t.sentAt):'создано '+fmtDT(t.createdAt)}</div>
+      </div>
+      ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600;white-space:nowrap;">${c.group}</span>`:''}
+    </div>
+    ${contactButtons(c, true, '')}
+  </div>`;
+
+  let html = `<div class="remind-hero">
+    <div class="date-big">✉️ Задачи</div>
+    <div class="date-sub">${pending.length} не отправлено · ${sent.length} отправлено</div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:14px;text-align:center;">Сообщения и информация на отправку клиентам — не звонки. Отмечай галочкой, когда отправила; карточка остаётся здесь, нажми на неё, чтобы посмотреть ответ клиента.</div>`;
+
+  if (!rows.length) {
+    html += `<div style="text-align:center;padding:50px 20px">
+      <div style="font-size:52px;margin-bottom:12px">✉️</div>
+      <p style="color:var(--muted);font-size:14px;line-height:1.7">Задач на отправку нет.<br>Добавь через кнопку 📌 на карточке клиента — отметь «Это отправка сообщения».</p>
+    </div>`;
+    el.innerHTML = html; return;
+  }
+
+  if (pending.length) {
+    html += `<div style="font-size:13px;font-weight:700;color:#7c4dff;margin-bottom:10px;">📤 Не отправлено (${pending.length})</div>`;
+    pending.forEach(r => html += row(r));
+  }
+  if (sent.length) {
+    html += `<div style="font-size:13px;font-weight:700;color:var(--muted);margin-top:20px;margin-bottom:10px;">✅ Отправлено (${sent.length})</div>`;
+    sent.forEach(r => html += row(r));
+  }
+  el.innerHTML = html;
+}
+
 let callbackTargetId = null;
 
 function openCallbackModal(id) {
