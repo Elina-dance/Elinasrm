@@ -4629,16 +4629,36 @@ async function fbSave() {
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
-    // Защита от затирания: если в облаке карточек больше (другая вкладка или
-    // устройство успели что-то добавить), подтягиваем недостающие к себе ПЕРЕД
-    // сохранением — чтобы устаревшая вкладка не стёрла чужие новые карточки.
+    // Защита от затирания: сверяем каждую карточку по updatedAt, а не просто
+    // считаем общее число. Устаревшая вкладка (без свежих правок других
+    // устройств) не должна тихо откатывать чужие изменения или воскрешать
+    // удалённые записи — побеждает та версия карточки, что изменена позже.
     try {
       const cur = await fetch(FB_URL).then(r => r.ok ? r.json() : null);
-      if (cur && Array.isArray(cur.clients) && cur.clients.length > clients.length) {
-        const localIds = new Set(clients.map(c => c.id));
-        const missing = cur.clients.filter(c => !localIds.has(c.id));
-        if (missing.length) {
-          clients = clients.concat(missing);
+      if (cur && Array.isArray(cur.clients)) {
+        const lastSyncMs = parseInt(localStorage.getItem('ocean_last_save') || '0', 10);
+        const serverMap = new Map(cur.clients.map(c => [c.id, c]));
+        const localMap = new Map(clients.map(c => [c.id, c]));
+        const allIds = new Set([...serverMap.keys(), ...localMap.keys()]);
+        const merged = [];
+        let changed = false;
+        allIds.forEach(id => {
+          const s = serverMap.get(id), l = localMap.get(id);
+          if (s && l) {
+            const sT = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+            const lT = l.updatedAt ? new Date(l.updatedAt).getTime() : 0;
+            if (sT > lT) { merged.push(s); changed = true; }
+            else merged.push(l);
+          } else if (s && !l) {
+            merged.push(s); changed = true; // появилась в другом месте — не теряем
+          } else if (l && !s) {
+            const lT = l.updatedAt ? new Date(l.updatedAt).getTime() : 0;
+            if (lT > lastSyncMs) merged.push(l); // реально новая, ещё не улетела на сервер
+            else changed = true; // призрак уже удалённой записи — не воскрешаем
+          }
+        });
+        if (changed) {
+          clients = merged;
           localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
           renderTabs(); renderCurrentTab();
         }
