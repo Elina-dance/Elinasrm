@@ -941,6 +941,7 @@ const TABS_CFG = [
   { id:'obzvon',       label:'📞 Обзвон' },
   { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'calendar',     label:'📅 Календарь' },
+  { id:'later_calendar', label:'⏳📅 Вернутся по месяцам' },
   { id:'active',       label:'🎓 Действующие' },
   { id:'bonuses',      label:'🎁 Бонусы' },
   { id:'adults',       label:'🕺 Взрослые' },
@@ -994,6 +995,7 @@ function renderCurrentTab() {
   else if (activeTab==='obzvon') renderObzvon();
   else if (activeTab==='trial_hub') renderTrialHub();
   else if (activeTab==='calendar') renderCalendar();
+  else if (activeTab==='later_calendar') renderLaterCalendar();
   else if (activeTab==='active') renderActive();
   else if (activeTab==='bonuses') renderBonuses();
   else if (activeTab==='adults') renderAdults();
@@ -1131,6 +1133,9 @@ function renderTabs() {
     } else if (t.id === 'calendar') {
       const todayTrials = clients.filter(c => hasTodayTrial(c)).length;
       if (todayTrials > 0) badge = `<span class="badge" style="background:#00acc1;color:white">${todayTrials}</span>`;
+    } else if (t.id === 'later_calendar') {
+      const laterCalCount = clients.filter(c=>c.status==='later').length;
+      if (laterCalCount > 0) badge = `<span class="badge" style="background:#7c4dff;color:white">${laterCalCount}</span>`;
     } else if (t.id === 'active') {
       badge = `<span class="badge" style="background:var(--pink);color:white">${activeCount}</span>`;
     } else if (t.id === 'overdue_hub') {
@@ -1189,6 +1194,7 @@ function render() {
   if (activeTab==='obzvon') { renderObzvon(); return; }
   if (activeTab==='trial_hub') { renderTrialHub(); return; }
   if (activeTab==='calendar') { renderCalendar(); return; }
+  if (activeTab==='later_calendar') { renderLaterCalendar(); return; }
   if (activeTab==='active') { renderActive(); return; }
   if (activeTab==='bonuses') { renderBonuses(); return; }
   if (activeTab==='adults') { renderAdults(); return; }
@@ -4047,6 +4053,152 @@ function calSelectDay(day) {
   if (selectedCalDay!==null) {
     setTimeout(()=>{ const el=document.getElementById('content'); if(el) el.scrollTop=el.scrollHeight; },50);
   }
+}
+
+// ============ КАЛЕНДАРЬ «ВЕРНУТСЯ ЧЕРЕЗ ВРЕМЯ» ПО МЕСЯЦАМ ============
+let laterCalYear = new Date().getFullYear();
+let laterCalMonth = new Date().getMonth();
+let selectedLaterCalDay = null;
+
+function laterCalPrev() {
+  laterCalMonth--;
+  if (laterCalMonth<0){laterCalMonth=11;laterCalYear--;}
+  selectedLaterCalDay=null; renderLaterCalendar();
+}
+function laterCalNext() {
+  laterCalMonth++;
+  if (laterCalMonth>11){laterCalMonth=0;laterCalYear++;}
+  selectedLaterCalDay=null; renderLaterCalendar();
+}
+function laterCalSelectDay(day) {
+  selectedLaterCalDay = selectedLaterCalDay===day ? null : day;
+  renderLaterCalendar();
+  if (selectedLaterCalDay!==null) {
+    setTimeout(()=>{ const el=document.getElementById('content'); if(el) el.scrollTop=el.scrollHeight; },50);
+  }
+}
+
+function renderLaterCalendar() {
+  const el = document.getElementById('content');
+  const q = getSearchQuery();
+  const year = laterCalYear, month = laterCalMonth;
+  const monthName = new Date(year, month, 1).toLocaleDateString('ru-RU', { month:'long', year:'numeric' });
+  const todayNorm = new Date(); todayNorm.setHours(0,0,0,0);
+
+  // day → [clients], только статус later, дата (прошлая или будущая) в этом месяце
+  const dayMap = {};
+  let totalMonth = 0;
+  clients.forEach(c => {
+    if (c.status !== 'later' || !c.nextCall) return;
+    if (!matchesSearch(c, q)) return;
+    const d = new Date(c.nextCall);
+    if (d.getFullYear()!==year || d.getMonth()!==month) return;
+    const day = d.getDate();
+    if (!dayMap[day]) dayMap[day] = [];
+    dayMap[day].push(c);
+    totalMonth++;
+  });
+
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const startOffset = firstDow === 0 ? 6 : firstDow - 1;
+  const today = new Date();
+  const isCurMon = today.getFullYear()===year && today.getMonth()===month;
+
+  let html = `
+  <div style="background:linear-gradient(135deg,#4a148c,#7c4dff);border-radius:14px;padding:14px 16px;color:white;margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <button onclick="laterCalPrev()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">‹</button>
+      <div style="text-align:center;">
+        <div style="font-size:15px;font-weight:800;text-transform:capitalize;">⏳ ${monthName}</div>
+        <div style="font-size:11px;opacity:0.75;margin-top:2px;">${totalMonth} · вернутся через время</div>
+      </div>
+      <button onclick="laterCalNext()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">›</button>
+    </div>
+  </div>
+
+  <div style="background:white;border-radius:14px;padding:10px;box-shadow:0 1px 6px rgba(0,0,0,0.07);margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px;">
+      ${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d,i)=>
+        `<div style="text-align:center;font-size:10px;font-weight:700;color:${i>=5?'var(--red)':'var(--muted)'};padding:4px 0;">${d}</div>`
+      ).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">`;
+
+  for (let i=0;i<startOffset;i++) html+=`<div></div>`;
+
+  for (let day=1; day<=daysInMonth; day++) {
+    const dayClients = dayMap[day]||[];
+    const isToday = isCurMon && today.getDate()===day;
+    const isSel = selectedLaterCalDay===day;
+    const dow = (startOffset+day-1)%7;
+    const isWknd = dow>=5;
+    const dayDateNorm = new Date(year, month, day);
+    const isOverdue = dayClients.length>0 && dayDateNorm < todayNorm;
+    const hasFuture = dayClients.length>0 && dayDateNorm >= todayNorm;
+    const cellBg = isSel?'#e1d5f9':isToday?'#fff8e1':isOverdue?'#ffebee':hasFuture?'#f3e8ff':'#fafafa';
+    const cellBd = isSel?'#7c4dff':isToday?'var(--yellow)':isOverdue?'var(--red)':hasFuture?'#b388ff':'transparent';
+
+    html+=`<div onclick="laterCalSelectDay(${day})" style="border-radius:9px;padding:6px 2px;min-height:44px;cursor:pointer;
+      background:${cellBg};border:2px solid ${cellBd};transition:all 0.15s;-webkit-tap-highlight-color:transparent;box-sizing:border-box;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div style="font-size:12px;font-weight:${isToday||isSel?800:600};
+        color:${isSel?'#4a148c':isToday?'var(--orange)':isWknd?'var(--red)':'var(--text)'};line-height:1.2;">${day}</div>
+      ${dayClients.length?`<div style="background:${isOverdue?'var(--red)':'#7c4dff'};color:white;border-radius:8px;padding:0 6px;font-size:9px;font-weight:800;margin-top:2px;">${dayClients.length}</div>`:''}
+    </div>`;
+  }
+  html+=`</div></div>`;
+
+  html+=`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">
+    <div style="background:#f3e8ff;color:#7c4dff;border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;">⏳ Будущая дата</div>
+    <div style="background:#ffebee;color:var(--red);border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;">🔴 Просрочено</div>
+  </div>`;
+
+  if (selectedLaterCalDay !== null) {
+    const dayClients = (dayMap[selectedLaterCalDay]||[]).slice().sort((a,b)=>new Date(a.nextCall)-new Date(b.nextCall));
+    const selDate = new Date(year, month, selectedLaterCalDay);
+    const dateStr = selDate.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
+    const isDayPast = selDate < todayNorm;
+
+    if (!dayClients.length) {
+      html+=`<div style="background:white;border-radius:14px;padding:24px 16px;text-align:center;color:var(--muted);box-shadow:0 1px 6px rgba(0,0,0,0.07);">
+        <div style="font-size:28px;margin-bottom:8px;">📅</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);text-transform:capitalize;">${dateStr}</div>
+        <div style="font-size:12px;margin-top:5px;">Никто не должен вернуться в этот день</div>
+      </div>`;
+    } else {
+      html+=`<div style="background:white;border-radius:14px;padding:14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);">
+        <div style="font-size:14px;font-weight:800;color:#7c4dff;margin-bottom:12px;text-transform:capitalize;">${isDayPast?'🔴':'⏳'} ${dateStr} · ${dayClients.length}</div>`;
+
+      dayClients.forEach(c=>{
+        const timeStr = fmtTime(c.nextCall);
+        html+=`<div class="remind-card" style="border:2px solid #b388ff;background:#f9f5ff;margin-bottom:10px;">
+          <div class="remind-card-top">
+            <div class="remind-name">${c.name}</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <div style="background:${isDayPast?'var(--red-bg)':'#f3e8ff'};color:${isDayPast?'var(--red)':'#7c4dff'};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${timeStr!=='—'?'⏰ '+timeStr:'без времени'}</div>
+              <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
+              <button onclick="openLogModal(${c.id})" style="background:var(--wave);color:white;border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">✏️</button>
+            </div>
+          </div>
+          <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">
+            ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">👥 ${c.group}</span>`:''}
+            ${c.channel?`<span style="background:#e0f7fa;color:#00838f;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📣 ${c.channel}</span>`:''}
+          </div>
+          ${c.notes?`<div class="card-notes">${c.notes}</div>`:''}
+          ${contactButtons(c)}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            <button onclick="quickStatus(${c.id},'trial',0);renderLaterCalendar();" style="flex:1;min-width:70px;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🎯 Записались</button>
+            <button onclick="quickStatus(${c.id},'declined',0);renderLaterCalendar();" style="flex:1;min-width:70px;background:var(--gray-bg);color:var(--gray);border:1.5px solid var(--gray);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">❌ Не актуально</button>
+            <button onclick="openLaterModal(${c.id});" style="flex:1;min-width:70px;background:var(--purple-bg);color:var(--purple);border:1.5px solid var(--purple);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>
+          </div>
+        </div>`;
+      });
+      html+=`</div>`;
+    }
+  }
+
+  el.innerHTML = html;
 }
 
 // ============ ПЕРЕНОС ПРОБНОГО ============
