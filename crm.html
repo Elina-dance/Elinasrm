@@ -938,18 +938,17 @@ const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.id,s]));
 const TABS_CFG = [
   { id:'remind',       label:'🔔 Напоминания' },
   { id:'msgtasks',     label:'✉️ Задачи' },
-  { id:'obzvon',       label:'📞 Обзвон' },
-  { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'calendar',     label:'📅 Календарь' },
   { id:'later_calendar', label:'⏳📅 Вернутся по месяцам' },
+  { id:'all',          label:'Все' },
+  { id:'table',        label:'📋 Таблица' },
   { id:'active',       label:'🎓 Действующие' },
+  { id:'obzvon',       label:'📞 Обзвон' },
+  { id:'trial_hub',    label:'🎯 Пробные' },
   { id:'bonuses',      label:'🎁 Бонусы' },
   { id:'adults',       label:'🕺 Взрослые' },
-  { id:'all',          label:'Все' },
   { id:'overdue_hub',  label:'🔴 Просроченные' },
-  { id:'later_hub',    label:'⏳ Вернутся' },
   { id:'declined_hub', label:'🗃 Не актуальные' },
-  { id:'table',        label:'📋 Таблица' },
 ];
 
 // Data lives in Firebase + localStorage
@@ -1015,7 +1014,6 @@ function renderCurrentTab() {
   else if (activeTab==='bonuses') renderBonuses();
   else if (activeTab==='adults') renderAdults();
   else if (activeTab==='overdue_hub') renderOverdueHub();
-  else if (activeTab==='later_hub') renderLaterHub();
   else if (activeTab==='declined_hub') renderDeclinedHub();
   else if (activeTab==='table') renderTable();
   else render();
@@ -1155,9 +1153,6 @@ function renderTabs() {
       badge = `<span class="badge" style="background:var(--pink);color:white">${activeCount}</span>`;
     } else if (t.id === 'overdue_hub') {
       if (overdueCount > 0) badge = `<span class="badge" style="background:var(--red);color:white">${overdueCount}</span>`;
-    } else if (t.id === 'later_hub') {
-      const laterCount = clients.filter(c=>c.status==='later').length;
-      if (laterCount > 0) badge = `<span class="badge" style="background:var(--purple);color:white">${laterCount}</span>`;
     } else if (t.id === 'declined_hub') {
       if (declinedCount > 0) badge = `<span class="badge badge-default">${declinedCount}</span>`;
     } else if (t.id === 'all') {
@@ -1214,7 +1209,6 @@ function render() {
   if (activeTab==='bonuses') { renderBonuses(); return; }
   if (activeTab==='adults') { renderAdults(); return; }
   if (activeTab==='overdue_hub') { renderOverdueHub(); return; }
-  if (activeTab==='later_hub') { renderLaterHub(); return; }
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
   if (activeTab==='table') { renderTable(); return; }
 
@@ -4213,6 +4207,64 @@ function renderLaterCalendar() {
     }
   }
 
+  // Полный список всех «вернутся через время» — карточками, ниже календаря
+  const fullList = clients
+    .filter(c => c.status === 'later' && matchesSearch(c, q))
+    .sort((a,b) => {
+      if (!a.nextCall && !b.nextCall) return 0;
+      if (!a.nextCall) return 1;
+      if (!b.nextCall) return -1;
+      return new Date(a.nextCall) - new Date(b.nextCall);
+    });
+
+  html += `<div style="margin-top:20px;">`;
+  if (!fullList.length) {
+    html += `<div style="text-align:center;padding:40px 20px;">
+      <div style="font-size:44px;margin-bottom:10px;">⏳</div>
+      <p style="color:var(--muted);font-size:13px;">Нет контактов которые обещали вернуться</p>
+    </div>`;
+  } else {
+    html += `<div style="background:var(--purple-bg);border:2px solid var(--purple);border-radius:14px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:800;color:var(--purple);">⏳ Вернутся через время (${fullList.length})</div>
+      <div style="font-size:12px;color:var(--purple);opacity:0.8;margin-top:4px;">Отсортированы по дате — ближайшие сверху</div>
+    </div>`;
+
+    fullList.forEach(c => {
+      const nextStr = c.nextCall
+        ? new Date(c.nextCall).toLocaleDateString('ru-RU',{day:'2-digit',month:'long',year:'numeric'})
+        : '—';
+      const daysLeft = c.nextCall ? Math.ceil((new Date(c.nextCall) - new Date()) / 86400000) : null;
+      const daysColor = daysLeft !== null && daysLeft <= 3 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--orange)' : 'var(--purple)';
+      const todayTasks = (c.tasks||[]).filter(t => { const d=new Date(t.date); return !t.done && d>=todayStart() && d<tomorrowStart(); });
+
+      html += `<div class="card" style="border-left:4px solid var(--purple);background:var(--purple-bg);">
+        <div class="card-header">
+          <div class="card-name">${c.name}</div>
+          <div style="background:var(--purple);color:white;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;">⏳</div>
+        </div>
+        <div class="card-meta">
+          ${c.group?`<span class="meta-tag group">👥 ${c.group}</span>`:''}
+          ${c.channel?`<span class="meta-tag">${c.channel}</span>`:''}
+        </div>
+        ${c.notes?`<div class="card-notes">${c.notes}</div>`:''}
+        ${todayTasks.map(t=>`<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('')}
+        <div style="background:white;border-radius:10px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;color:var(--muted);font-weight:600;">📅 Написать:</span>
+          <span style="font-size:13px;font-weight:800;color:${daysColor};">${nextStr}${daysLeft!==null?(daysLeft>=0?` (через ${daysLeft} дн.)`:` (просрочено на ${Math.abs(daysLeft)} дн.)`):''}</span>
+        </div>
+        ${contactButtons(c)}
+        <div style="display:flex;gap:7px;">
+          <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Итог</button>
+          <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
+          <button onclick="changeStatusInline(${c.id},'trial')" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">🎯</button>
+          <button onclick="changeStatusInline(${c.id},'bought')" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">🎓</button>
+          <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">⚙️</button>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
   el.innerHTML = html;
 }
 
@@ -4456,68 +4508,6 @@ function rescheduleAllOverdue() {
   renderOverdueHub();
 }
 // ============ ВЕРНУТСЯ ЧЕРЕЗ ВРЕМЯ ============
-function renderLaterHub() {
-  const el = document.getElementById('content');
-  const q = getSearchQuery();
-  const list = clients
-    .filter(c => c.status === 'later' && matchesSearch(c, q))
-    .sort((a,b) => {
-      if (!a.nextCall && !b.nextCall) return 0;
-      if (!a.nextCall) return 1;
-      if (!b.nextCall) return -1;
-      return new Date(a.nextCall) - new Date(b.nextCall);
-    });
-
-  if (!list.length) {
-    el.innerHTML = `<div style="text-align:center;padding:60px 20px;">
-      <div style="font-size:52px;margin-bottom:12px;">⏳</div>
-      <p style="color:var(--muted);font-size:14px;">Нет контактов которые обещали вернуться</p>
-    </div>`;
-    return;
-  }
-
-  let html = `<div style="background:var(--purple-bg);border:2px solid var(--purple);border-radius:14px;padding:14px 16px;margin-bottom:16px;">
-    <div style="font-size:14px;font-weight:800;color:var(--purple);">⏳ Вернутся через время (${list.length})</div>
-    <div style="font-size:12px;color:var(--purple);opacity:0.8;margin-top:4px;">Отсортированы по дате — ближайшие сверху</div>
-  </div>`;
-
-  list.forEach(c => {
-    const nextStr = c.nextCall
-      ? new Date(c.nextCall).toLocaleDateString('ru-RU',{day:'2-digit',month:'long',year:'numeric'})
-      : '—';
-    const daysLeft = c.nextCall ? Math.ceil((new Date(c.nextCall) - new Date()) / 86400000) : null;
-    const daysColor = daysLeft !== null && daysLeft <= 3 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--orange)' : 'var(--purple)';
-    const todayTasks = (c.tasks||[]).filter(t => { const d=new Date(t.date); return !t.done && d>=todayStart() && d<tomorrowStart(); });
-
-    html += `<div class="card" style="border-left:4px solid var(--purple);background:var(--purple-bg);">
-      <div class="card-header">
-        <div class="card-name">${c.name}</div>
-        <div style="background:var(--purple);color:white;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;">⏳</div>
-      </div>
-      <div class="card-meta">
-        ${c.group?`<span class="meta-tag group">👥 ${c.group}</span>`:''}
-        ${c.channel?`<span class="meta-tag">${c.channel}</span>`:''}
-      </div>
-      ${c.notes?`<div class="card-notes">${c.notes}</div>`:''}
-      ${todayTasks.map(t=>`<div style="background:#e8eaf6;border-left:3px solid #3949ab;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#3949ab;font-weight:600;">📌 ${t.comment}</div>`).join('')}
-      <div style="background:white;border-radius:10px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:12px;color:var(--muted);font-weight:600;">📅 Написать:</span>
-        <span style="font-size:13px;font-weight:800;color:${daysColor};">${nextStr}${daysLeft!==null?(daysLeft>=0?` (через ${daysLeft} дн.)`:` (просрочено на ${Math.abs(daysLeft)} дн.)`):''}</span>
-      </div>
-      ${contactButtons(c)}
-      <div style="display:flex;gap:7px;">
-        <button onclick="openLogModal(${c.id})" style="flex:2;background:var(--wave);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Итог</button>
-        <button onclick="openTaskModal(${c.id})" style="flex:1;background:#e8eaf6;color:#3949ab;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">📌</button>
-        <button onclick="changeStatusInline(${c.id},'trial')" style="flex:1;background:#e0f7fa;color:#00838f;border:1.5px solid #00acc1;border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">🎯</button>
-        <button onclick="changeStatusInline(${c.id},'bought')" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;">🎓</button>
-        <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">⚙️</button>
-      </div>
-    </div>`;
-  });
-
-  el.innerHTML = html;
-}
-
 function renderDeclinedHub() {
   const el = document.getElementById('content');
   const q = getSearchQuery();
