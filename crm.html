@@ -957,6 +957,21 @@ const INITIAL_DATA = [{"id":1,"name":"Бабушка Мии 5 лет","phone":"8
 
 // ============ STATE ============
 let clients = [];
+// Снимок последней синхронизированной с Firebase версии каждой карточки (id -> JSON строка).
+// Используется fbSave() для точечного сохранения — только реально изменённых записей,
+// чтобы устаревшая вкладка не могла затереть чужие правки других клиентов.
+let _syncedSnapshot = {};
+function _refreshSyncedSnapshot() {
+  _syncedSnapshot = {};
+  clients.forEach(c => { _syncedSnapshot[c.id] = JSON.stringify(c); });
+}
+// Firebase хранит clients как объект {id: карточка}, а не позиционный массив —
+// так каждая запись адресуется своим id независимо от порядка/количества других.
+function _cloudClientsToArray(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  return Object.values(raw).filter(Boolean);
+}
 let activeTab = localStorage.getItem('ocean_active_tab') || 'remind';
 let editingId = null;
 let loggingId = null;
@@ -4692,17 +4707,19 @@ function _fbOfflineFallback(reason) {
 }
 
 function _applyCloudData(cloud) {
-  if (!cloud || !cloud.clients?.length) return false;
+  const arr = _cloudClientsToArray(cloud && cloud.clients);
+  if (!arr.length) return false;
   const cloudTime = new Date(cloud.savedAt).getTime();
   const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
   if (tgSyncTimer) return false;
-  const cloudCount = cloud.clients.length;
+  const cloudCount = arr.length;
   const localCount = clients.length;
   // Берём облако только если там БОЛЬШЕ клиентов, или столько же но новее
   // Никогда не перезаписываем большее количество меньшим
   const shouldTakeCloud = cloudCount > localCount || (cloudCount === localCount && cloudTime > localTime);
   if (shouldTakeCloud) {
-    clients = cloud.clients;
+    clients = arr;
+    _refreshSyncedSnapshot();
     if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
     autoDedup(true);
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
@@ -4729,7 +4746,7 @@ async function loadFromFirebase() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const cloud = await resp.json();
     _fbConnected = true;
-    if (!cloud || !cloud.clients?.length) {
+    if (!_cloudClientsToArray(cloud && cloud.clients).length) {
       if (clients.length > 0) fbSave();
       else setTgBar('📭', 'Нет данных', '#ffd54f', false);
     } else {
@@ -4746,15 +4763,34 @@ async function loadFromFirebase() {
   }
 }
 
+let _fbApplyDebounce = null;
+function _fbRefetchAndApply() {
+  if (_fbApplyDebounce) return;
+  _fbApplyDebounce = setTimeout(async () => {
+    _fbApplyDebounce = null;
+    try {
+      const resp = await fetch(FB_URL);
+      if (resp.ok) _applyCloudData(await resp.json());
+    } catch(e) {}
+  }, 800);
+}
+
 function startSSE() {
   if (_fbSSE) return;
   try {
     _fbSSE = new EventSource(FB_URL);
+    // 'put' с path:'/' — весь узел заменён целиком (например, нашим скриптом миграции).
+    // Любой другой путь (частичное обновление одной карточки) и 'patch' —
+    // проще и надёжнее просто перечитать всю базу, чем разбирать частичный payload.
     _fbSSE.addEventListener('put', function(e) {
       try {
         const msg = JSON.parse(e.data);
-        if (msg && msg.data) _applyCloudData(msg.data);
-      } catch(ex) {}
+        if (msg && msg.path === '/' && msg.data) _applyCloudData(msg.data);
+        else _fbRefetchAndApply();
+      } catch(ex) { _fbRefetchAndApply(); }
+    });
+    _fbSSE.addEventListener('patch', function(e) {
+      _fbRefetchAndApply();
     });
     _fbSSE.onerror = function() {
       _fbSSE.close(); _fbSSE = null;
@@ -4781,54 +4817,74 @@ async function fbSave() {
   if (!clients || clients.length === 0) return;
   try {
     setTgBar('📤', 'Сохраняю...', '#ffd54f', false);
-    // Защита от затирания: сверяем каждую карточку по updatedAt, а не просто
-    // считаем общее число. Устаревшая вкладка (без свежих правок других
-    // устройств) не должна тихо откатывать чужие изменения или воскрешать
-    // удалённые записи — побеждает та версия карточки, что изменена позже.
+    // Точечное сохранение: находим, какие карточки реально изменились в этой
+    // вкладке с последней синхронизации (по _syncedSnapshot), и отправляем в
+    // Firebase ТОЛЬКО их — не весь массив. Устаревшая вкладка физически не
+    // может затереть чужие правки других клиентов, потому что её запрос даже
+    // не упоминает их пути.
+    const currentIds = new Set();
+    const localDirty = new Map();
+    clients.forEach(c => {
+      currentIds.add(c.id);
+      if (_syncedSnapshot[c.id] !== JSON.stringify(c)) localDirty.set(c.id, c);
+    });
+    const localDeleted = Object.keys(_syncedSnapshot).map(Number).filter(id => !currentIds.has(id));
+
+    // Сверяем изменённые записи с сервером: если там та же карточка уже
+    // обновлена кем-то позже нас (по updatedAt) — принимаем чужую версию
+    // вместо того, чтобы затереть её своей.
     try {
       const cur = await fetch(FB_URL).then(r => r.ok ? r.json() : null);
-      if (cur && Array.isArray(cur.clients)) {
-        const lastSyncMs = parseInt(localStorage.getItem('ocean_last_save') || '0', 10);
-        const serverMap = new Map(cur.clients.map(c => [c.id, c]));
-        const localMap = new Map(clients.map(c => [c.id, c]));
-        const allIds = new Set([...serverMap.keys(), ...localMap.keys()]);
-        const merged = [];
-        let changed = false;
-        allIds.forEach(id => {
-          const s = serverMap.get(id), l = localMap.get(id);
-          if (s && l) {
-            const sT = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
-            const lT = l.updatedAt ? new Date(l.updatedAt).getTime() : 0;
-            if (sT > lT) { merged.push(s); changed = true; }
-            else merged.push(l);
-          } else if (s && !l) {
-            merged.push(s); changed = true; // появилась в другом месте — не теряем
-          } else if (l && !s) {
-            const lT = l.updatedAt ? new Date(l.updatedAt).getTime() : 0;
-            if (lT > lastSyncMs) merged.push(l); // реально новая, ещё не улетела на сервер
-            else changed = true; // призрак уже удалённой записи — не воскрешаем
+      if (cur) {
+        const serverArr = _cloudClientsToArray(cur.clients);
+        const serverMap = new Map(serverArr.map(c => [c.id, c]));
+        // карточка есть на сервере, но у нас в памяти отсутствует и мы её не удаляли — подхватываем
+        serverMap.forEach((sc, id) => {
+          if (!currentIds.has(id) && !localDeleted.includes(id)) {
+            clients.push(sc); currentIds.add(id);
+            _syncedSnapshot[id] = JSON.stringify(sc);
           }
         });
-        if (changed) {
-          clients = merged;
-          localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-          renderTabs(); renderCurrentTab();
-        }
+        localDirty.forEach((c, id) => {
+          const s = serverMap.get(id);
+          if (!s) return;
+          const sT = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+          const lT = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
+          if (sT > lT) {
+            const idx = clients.findIndex(x => x.id === id);
+            if (idx !== -1) clients[idx] = s;
+            _syncedSnapshot[id] = JSON.stringify(s);
+            localDirty.delete(id);
+          }
+        });
       }
-    } catch(_) { /* нет связи — сохраняем как есть */ }
+    } catch(_) { /* нет связи с сервером для сверки — сохраняем как есть */ }
+
     const now = Date.now();
     localStorage.setItem('ocean_last_save', now.toString());
-    const payload = {
-      clients,
-      archive: JSON.parse(localStorage.getItem('ocean_month_archive') || '{}'),
-      savedAt: new Date(now).toISOString()
-    };
+    localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
+
+    if (localDirty.size === 0 && localDeleted.length === 0) {
+      renderTabs(); renderCurrentTab();
+      setTgBar('✅', 'Сохранено', '#a5d6a7', false);
+      return;
+    }
+
+    const updates = {};
+    localDirty.forEach((c, id) => { updates['clients/' + id] = c; });
+    localDeleted.forEach(id => { updates['clients/' + id] = null; });
+    updates['archive'] = JSON.parse(localStorage.getItem('ocean_month_archive') || '{}');
+    updates['savedAt'] = new Date(now).toISOString();
+
     const resp = await fetch(FB_URL, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(updates)
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    localDirty.forEach((c, id) => { _syncedSnapshot[id] = JSON.stringify(c); });
+    localDeleted.forEach(id => { delete _syncedSnapshot[id]; });
+    renderTabs(); renderCurrentTab();
     const t = new Date(now).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     setTgBar('✅', 'Сохранено в ' + t, '#a5d6a7', false);
     updateSyncStatus('✅ ' + t);
@@ -5382,12 +5438,14 @@ async function manualTgLoad() {
     const resp = await fetch(FB_URL);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const cloud = await resp.json();
-    if (!cloud || !cloud.clients?.length) {
+    const cloudArr = _cloudClientsToArray(cloud && cloud.clients);
+    if (!cloudArr.length) {
       showToast('📭 Нет данных в облаке');
       setTgBar('📭', 'Нет данных', '#ffd54f', false);
       return;
     }
-    clients = cloud.clients;
+    clients = cloudArr;
+    _refreshSyncedSnapshot();
     if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
     autoDedup(true);
     localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
