@@ -4699,28 +4699,26 @@ function _fbOfflineFallback(reason) {
 function _applyCloudData(cloud) {
   const arr = _cloudClientsToArray(cloud && cloud.clients);
   if (!arr.length) return false;
+  if (tgSyncTimer) return false; // сейчас улетит наше сохранение — не затираем его входящими данными
+  // Сервер — источник истины: каждая карточка сохраняется точечно (PATCH по id),
+  // поэтому облако всегда актуальнее любого локального кэша, включая случаи,
+  // когда что-то было удалено и в облаке стало МЕНЬШЕ записей, чем в старом
+  // локальном кэше вкладки. Раньше здесь было правило "больше побеждает" —
+  // из-за него устаревшая вкладка при перезагрузке считала свою большую, но
+  // протухшую копию более достоверной и тут же заливала её обратно на сервер,
+  // воскрешая удалённые записи.
+  clients = arr;
+  _refreshSyncedSnapshot();
+  if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
+  autoDedup(true);
+  localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
   const cloudTime = new Date(cloud.savedAt).getTime();
-  const localTime = parseInt(localStorage.getItem('ocean_last_save') || '0');
-  if (tgSyncTimer) return false;
-  const cloudCount = arr.length;
-  const localCount = clients.length;
-  // Берём облако только если там БОЛЬШЕ клиентов, или столько же но новее
-  // Никогда не перезаписываем большее количество меньшим
-  const shouldTakeCloud = cloudCount > localCount || (cloudCount === localCount && cloudTime > localTime);
-  if (shouldTakeCloud) {
-    clients = arr;
-    _refreshSyncedSnapshot();
-    if (cloud.archive) localStorage.setItem('ocean_month_archive', JSON.stringify(cloud.archive));
-    autoDedup(true);
-    localStorage.setItem('ocean_crm_v3', JSON.stringify(clients));
-    localStorage.setItem('ocean_last_save', cloudTime.toString());
-    renderTabs(); renderCurrentTab();
-    const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-    setTgBar('📥', 'Обновлено · ' + t + ' · ' + cloudCount + ' кл.', '#a5d6a7', false);
-    updateSyncStatus('✅ ' + t);
-    return true;
-  }
-  return false;
+  localStorage.setItem('ocean_last_save', cloudTime.toString());
+  renderTabs(); renderCurrentTab();
+  const t = new Date(cloud.savedAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+  setTgBar('📥', 'Обновлено · ' + t + ' · ' + arr.length + ' кл.', '#a5d6a7', false);
+  updateSyncStatus('✅ ' + t);
+  return true;
 }
 
 async function loadFromFirebase() {
