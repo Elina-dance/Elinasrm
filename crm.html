@@ -949,6 +949,7 @@ const TABS_CFG = [
   { id:'adults',       label:'🕺 Взрослые' },
   { id:'overdue_hub',  label:'🔴 Просроченные' },
   { id:'declined_hub', label:'🗃 Не актуальные' },
+  { id:'info',         label:'ℹ️ Инфо студии' },
 ];
 
 // Data lives in Firebase + localStorage
@@ -1015,6 +1016,7 @@ function renderCurrentTab() {
   else if (activeTab==='adults') renderAdults();
   else if (activeTab==='overdue_hub') renderOverdueHub();
   else if (activeTab==='declined_hub') renderDeclinedHub();
+  else if (activeTab==='info') renderStudioInfo();
   else if (activeTab==='table') renderTable();
   else render();
 }
@@ -1210,6 +1212,7 @@ function render() {
   if (activeTab==='adults') { renderAdults(); return; }
   if (activeTab==='overdue_hub') { renderOverdueHub(); return; }
   if (activeTab==='declined_hub') { renderDeclinedHub(); return; }
+  if (activeTab==='info') { renderStudioInfo(); return; }
   if (activeTab==='table') { renderTable(); return; }
 
   const GROUP_ORDER_ALL = ['Индивидуальные','Малыши','Младшие','Средние','Подростки'];
@@ -4681,6 +4684,8 @@ const BONUSES_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebased
 let bonuses = []; // бонусы учеников [{id, name, qty, spent, reward}]
 const ADULTS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/adults.json';
 let adults = []; // база взрослых (предзапись) [{id, name, contact, notes}]
+const INFO_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/info.json';
+let studioInfo = { text: '', updatedAt: '' }; // актуальная инфа студии: расписание, цены и т.д. — единый источник истины
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let botChatsCache = []; // последние загруженные диалоги (для отправки ответа админом)
 let tgSyncTimer = null;
@@ -4744,6 +4749,7 @@ async function loadFromFirebase() {
     loadBotInbox(true);
     loadBonuses(true);
     loadAdults(true);
+    loadStudioInfo(true);
     setInterval(() => loadBotInbox(true), 60000);
   } catch(e) {
     clearTimeout(fbTimeout);
@@ -5145,6 +5151,50 @@ function deleteAdultRow(id) {
   adults = adults.filter(x => x.id !== id);
   saveAdults();
   renderCurrentTab();
+}
+
+// ============ ИНФО СТУДИИ (расписание, цены и т.д., Firebase /info) ============
+async function loadStudioInfo(rerender) {
+  try {
+    const resp = await fetch(INFO_URL);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && typeof data.text === 'string') {
+        studioInfo = data;
+        localStorage.setItem('ocean_studio_info', JSON.stringify(studioInfo));
+      }
+    }
+  } catch (e) {
+    try { studioInfo = JSON.parse(localStorage.getItem('ocean_studio_info') || 'null') || studioInfo; } catch (e2) {}
+  }
+  if (rerender && activeTab === 'info') renderCurrentTab();
+}
+
+function saveStudioInfo() {
+  const el = document.getElementById('studio-info-text');
+  if (!el) return;
+  studioInfo = { text: el.value, updatedAt: new Date().toISOString() };
+  localStorage.setItem('ocean_studio_info', JSON.stringify(studioInfo));
+  fetch(INFO_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(studioInfo) })
+    .then(() => showToast('✅ Инфо студии сохранено'))
+    .catch(() => showToast('⚠️ Нет связи — сохранено только на этом устройстве'));
+}
+
+function renderStudioInfo() {
+  const el = document.getElementById('content');
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const t = studioInfo.updatedAt ? new Date(studioInfo.updatedAt).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
+  el.innerHTML = `<div class="remind-hero">
+      <div class="date-big">ℹ️ Инфо студии</div>
+      <div style="font-size:12px;opacity:0.85;margin-top:4px;">Расписание, цены и всё актуальное — единый источник для всех записей</div>
+    </div>
+    <div style="background:white;border-radius:14px;padding:14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);">
+      <textarea id="studio-info-text" rows="20" style="width:100%;box-sizing:border-box;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;line-height:1.5;resize:vertical;" placeholder="Расписание групп, дни/время, стоимость занятий и абонементов, адрес, любая другая актуальная информация студии...">${esc(studioInfo.text)}</textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+        <div style="font-size:11px;color:var(--muted);">${t ? 'Обновлено: ' + t : 'Пока не заполнено'}</div>
+        <button onclick="saveStudioInfo()" class="btn-save" style="width:auto;padding:10px 24px;">💾 Сохранить</button>
+      </div>
+    </div>`;
 }
 
 // Ссылка «написать» по контакту: @ник → Telegram, телефон → WhatsApp
