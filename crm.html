@@ -3869,6 +3869,13 @@ function renderCalendar() {
     trialMap[day].push(c);
   });
   const totalMonth = Object.values(trialMap).reduce((s,a)=>s+a.filter(c=>c.status==='trial'&&new Date(c.trial)>=todayNorm).length, 0);
+  // Сколько всего записались на пробное в этом месяце (независимо от текущего статуса и от того, прошёл ли уже день) —
+  // отвечает на вопрос "сколько новых было записано за месяц"
+  const totalMonthAll = clients.filter(c => {
+    if (!c.trial) return false;
+    const d = new Date(c.trial);
+    return d.getFullYear()===year && d.getMonth()===month;
+  }).length;
 
   // Извлечь короткое имя ребёнка: "Маша 4 г. — мама Катя" → "Маша"
   function calChildName(name) {
@@ -3904,7 +3911,7 @@ function renderCalendar() {
       <button onclick="calPrev()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">‹</button>
       <div style="text-align:center;">
         <div style="font-size:15px;font-weight:800;text-transform:capitalize;">${monthName}</div>
-        <div style="font-size:11px;opacity:0.65;margin-top:2px;">${totalMonth} пробных занятий</div>
+        <div style="font-size:11px;opacity:0.65;margin-top:2px;">${totalMonth} предстоящих · ${totalMonthAll} записано за месяц</div>
       </div>
       <button onclick="calNext()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">›</button>
     </div>
