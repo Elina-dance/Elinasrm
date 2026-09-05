@@ -632,6 +632,16 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Вид абонемента</label>
+        <select id="ab-type" onchange="onAbTypeChange()">
+          <option value="classic">Классический</option>
+          <option value="monthly">Помесячный (напоминание 4-го числа, оплата до 5-го)</option>
+          <option value="freeze">С заморозкой (только Малыши)</option>
+        </select>
+        <div id="ab-type-hint-monthly" style="display:none;margin-top:6px;background:var(--foam);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--wave);line-height:1.5;">📨 При сохранении задача на СМС-напоминание о продлении встанет автоматически на 4-е число следующего месяца (оплата до 5-го).</div>
+        <div id="ab-type-hint-freeze" style="display:none;margin-top:6px;background:#fff8e1;border-radius:8px;padding:8px 10px;font-size:12px;color:#7a4000;line-height:1.5;">❄️ Только у Малышей. При пропусках абонемент может действовать на неделю (2 занятия) дольше — перед отправкой СМС клиенту сверь пропуски вручную.</div>
+      </div>
+      <div class="form-group">
         <label>Дата начала</label>
         <input id="ab-start" type="text" placeholder="ДД.ММ.ГГГГ (например: 01.07.2026)" oninput="calcAbEnd()" style="font-size:16px;">
       </div>
@@ -2879,11 +2889,25 @@ function calcAbEnd() {
   document.getElementById('ab-end').dataset.notify = notifyDate.toISOString().split('T')[0];
 }
 
+function onAbTypeChange() {
+  const t = document.getElementById('ab-type').value;
+  document.getElementById('ab-type-hint-monthly').style.display = t === 'monthly' ? 'block' : 'none';
+  document.getElementById('ab-type-hint-freeze').style.display = t === 'freeze' ? 'block' : 'none';
+}
+
+function abTypeLabel(t) {
+  if (t === 'monthly') return { label: 'Помесячный', bg: '#e3f2fd', color: '#1565c0' };
+  if (t === 'freeze') return { label: 'С заморозкой', bg: '#fff8e1', color: '#7a4000' };
+  return { label: 'Классический', bg: '#f5f5f5', color: '#616161' };
+}
+
 function openAbonementModal(id) {
   abTargetId = id;
   const c = clients.find(x => x.id === id);
   if (!c) return;
   document.getElementById('ab-client-name').textContent = c.name;
+  document.getElementById('ab-type').value = c.abType || 'classic';
+  onAbTypeChange();
   document.getElementById('ab-child').value = c.abChild || '';
   document.getElementById('ab-birthday').value = c.abBirthday ? toRuDate(c.abBirthday) : '';
   document.getElementById('ab-mom').value = c.abMom || '';
@@ -2918,6 +2942,7 @@ function openAbonementModal(id) {
 
 function saveAbonement() {
   const idx = clients.findIndex(x => x.id === abTargetId); if (idx < 0) return;
+  const abType = document.getElementById('ab-type').value || 'classic';
   const endRaw = document.getElementById('ab-end').value.trim();
   const endVal = toIsoDate(endRaw) || endRaw;
   const startRaw = document.getElementById('ab-start').value.trim();
@@ -2931,11 +2956,18 @@ function saveAbonement() {
       notifyVal = d.toISOString().split('T')[0];
     }
   }
+  // Помесячный: напоминание всегда на 4-е число СЛЕДУЮЩЕГО месяца (оплата до 5-го), а не "день после конца"
+  if (abType === 'monthly') {
+    const nowD = new Date();
+    const notifyD = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 4);
+    notifyVal = notifyD.toISOString().split('T')[0];
+  }
   // День рождения
   const birthdayRaw = document.getElementById('ab-birthday').value.trim();
   const birthdayVal = toIsoDate(birthdayRaw) || birthdayRaw;
   const childName = document.getElementById('ab-child').value.trim();
 
+  clients[idx].abType = abType;
   clients[idx].abChild = document.getElementById('ab-child').value.trim();
   clients[idx].abBirthday = birthdayVal;
   clients[idx].abMom = document.getElementById('ab-mom').value.trim();
@@ -2950,6 +2982,21 @@ function saveAbonement() {
   clients[idx].abNotifyDate = notifyVal;
   clients[idx].abRenewalPaid = true; // оплата внесена — убираем из напоминаний
   clients[idx].updatedAt = new Date().toISOString();
+
+  // Помесячный: автоматически ставим задачу отправить СМС о продлении на 4-е число следующего месяца
+  if (abType === 'monthly' && notifyVal) {
+    clients[idx].tasks = clients[idx].tasks || [];
+    const notifyDT = notifyVal + 'T10:00';
+    const alreadyHasTask = clients[idx].tasks.some(t => t.date === notifyDT && !t.done);
+    if (!alreadyHasTask) {
+      clients[idx].tasks.push({
+        id: Date.now(),
+        date: notifyDT,
+        comment: '📨 Отправить СМС о продлении помесячного абонемента (оплата до 5-го числа).',
+        done: false
+      });
+    }
+  }
 
   // Фиксируем оплату в архиве месяца
   const now = new Date();
@@ -3469,7 +3516,10 @@ function renderActive() {
         html += `<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-left:4px solid ${isEnding?'var(--orange)':'var(--pink)'};">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
             <div><div style="font-size:15px;font-weight:800;color:var(--ocean);">${c.abChild}</div><div style="font-size:11px;color:var(--muted);">${c.name}${c.abMom?' · мама '+c.abMom:''}</div>${c.abBirthday?`<div style="font-size:11px;color:var(--wave);margin-top:1px;">🎂 ${calcAge(c.abBirthday)}</div>`:''}</div>
-            <span style="background:var(--pink-bg);color:var(--pink);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;">${c.abGroup||c.group||'—'}</span>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+              <span style="background:var(--pink-bg);color:var(--pink);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;">${c.abGroup||c.group||'—'}</span>
+              <span style="background:${abTypeLabel(c.abType).bg};color:${abTypeLabel(c.abType).color};border-radius:8px;padding:3px 9px;font-size:10px;font-weight:700;white-space:nowrap;">${abTypeLabel(c.abType).label}</span>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
             <div style="background:#f9fafb;border-radius:8px;padding:7px 9px;"><div style="font-size:9px;color:var(--muted);font-weight:600;margin-bottom:1px;">НАЧАЛО → КОНЕЦ</div><div style="font-size:12px;font-weight:600;">${startStr} → <span style="color:${isEnding?'var(--orange)':'var(--text)'}">${endStr}</span></div></div>
@@ -3876,6 +3926,13 @@ function renderCalendar() {
     const d = new Date(c.trial);
     return d.getFullYear()===year && d.getMonth()===month;
   }).length;
+  // Сколько из записанных в этом месяце реально дошли до пробного (дошли и/или купили)
+  const totalArrived = clients.filter(c => {
+    if (!c.trial) return false;
+    if (c.status !== 'arrived' && c.status !== 'bought') return false;
+    const d = new Date(c.trial);
+    return d.getFullYear()===year && d.getMonth()===month;
+  }).length;
 
   // Извлечь короткое имя ребёнка: "Маша 4 г. — мама Катя" → "Маша"
   function calChildName(name) {
@@ -3911,7 +3968,7 @@ function renderCalendar() {
       <button onclick="calPrev()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">‹</button>
       <div style="text-align:center;">
         <div style="font-size:15px;font-weight:800;text-transform:capitalize;">${monthName}</div>
-        <div style="font-size:11px;opacity:0.65;margin-top:2px;">${totalMonth} предстоящих · ${totalMonthAll} записались на пробное в этом месяце</div>
+        <div style="font-size:11px;opacity:0.65;margin-top:2px;">${totalMonth} предстоящих · ${totalMonthAll} записались · ${totalArrived} дошли</div>
       </div>
       <button onclick="calNext()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:8px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">›</button>
     </div>
