@@ -2755,14 +2755,25 @@ function resetDays() {
 
 function parseRuDate(str) {
   if (!str) return null;
-  // Поддерживаем оба формата: ДД.ММ.ГГГГ и ГГГГ-ММ-ДД
+  // Поддерживаем оба формата: ДД.ММ.ГГГГ (и ДД.ММ.ГГ) и ГГГГ-ММ-ДД
   if (str.includes('-') && str.length === 10) return new Date(str);
   const parts = str.split('.');
   if (parts.length === 3) {
-    const [d, m, y] = parts;
+    let [d, m, y] = parts;
+    if (y && y.length === 2) y = '20' + y;
     if (d && m && y && y.length === 4) return new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
   }
   return null;
+}
+
+// Разбирает дату независимо от формата (ISO или ДД.ММ.ГГ[ГГ]) — на случай, если где-то
+// в данных дата затесалась не в ISO-формате (как случилось у Алины Тесленко: "31.08.26"
+// не распознавался как дата обычным new Date(), и напоминание о продлении молча не срабатывало).
+function safeDate(str) {
+  if (!str) return new Date(NaN);
+  const iso = new Date(str);
+  if (!isNaN(iso)) return iso;
+  return parseRuDate(str) || new Date(NaN);
 }
 
 function toIsoDate(str) {
@@ -3056,13 +3067,13 @@ function isAbonementEndToday(c) {
   // даже если галочка осталась стоять с прошлой оплаты.
   if (c.abRenewalPaid) {
     if (!c.abEnd) return false;                        // нет даты конца — считаем оплаченным
-    if (new Date(c.abEnd) >= todayStart()) return false; // абонемент ещё действует
+    if (safeDate(c.abEnd) >= todayStart()) return false; // абонемент ещё действует
   }
 
   // Проверяем abNotifyDate или следующий день после abEnd
   const checkDate = c.abNotifyDate
-    ? new Date(c.abNotifyDate)
-    : (() => { const d = new Date(c.abEnd); d.setDate(d.getDate()+1); return d; })();
+    ? safeDate(c.abNotifyDate)
+    : (() => { const d = safeDate(c.abEnd); d.setDate(d.getDate()+1); return d; })();
 
   return checkDate <= tomorrowStart();
 }
@@ -3070,7 +3081,7 @@ function isAbonementEndToday(c) {
 function isAbonementEndSoon(c) {
   // Для будущих задач — абонемент заканчивается в ближайшие 3 дня
   if (!c.abEnd) return false;
-  const d = new Date(c.abEnd);
+  const d = safeDate(c.abEnd);
   const threeDays = new Date();
   threeDays.setDate(threeDays.getDate() + 3);
   return d >= todayStart() && d <= threeDays && !c.abRenewalPaid;
