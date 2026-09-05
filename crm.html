@@ -607,6 +607,7 @@
       <div style="background:var(--pink-bg);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--pink);font-weight:600;">
         <strong id="ab-client-name"></strong>
       </div>
+      <div id="ab-history-block" style="display:none;margin-bottom:14px;"></div>
       <div class="form-group">
         <label>Фамилия и имя ребёнка</label>
         <input id="ab-child" placeholder="Например: Иванова Соня">
@@ -2925,11 +2926,36 @@ function abTypeLabel(t) {
   return { label: 'Классический', bg: '#f5f5f5', color: '#616161' };
 }
 
+// Показывает прошлые периоды абонемента (даты, сумма, вид) — история посещения на карточке
+function renderAbHistoryBlock(c) {
+  const el = document.getElementById('ab-history-block');
+  const hist = c.abHistory || [];
+  if (!hist.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const rows = hist.slice().reverse().map(h => {
+    const startStr = h.abStart ? toRuDate(h.abStart) : '—';
+    const endStr = h.abEnd ? toRuDate(h.abEnd) : '—';
+    const t = abTypeLabel(h.abType);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
+      <span>${startStr} → ${endStr}</span>
+      <span style="display:flex;gap:6px;align-items:center;">
+        ${h.abAmount ? `<span style="font-weight:700;color:var(--pink);">${parseFloat(h.abAmount).toLocaleString('ru-RU')} ₽</span>` : ''}
+        <span style="background:${t.bg};color:${t.color};border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;">${t.label}</span>
+      </span>
+    </div>`;
+  }).join('');
+  el.style.display = 'block';
+  el.innerHTML = `<div style="background:#f9fafb;border-radius:10px;padding:10px 14px;">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;">📜 История абонементов (${hist.length})</div>
+    ${rows}
+  </div>`;
+}
+
 function openAbonementModal(id) {
   abTargetId = id;
   const c = clients.find(x => x.id === id);
   if (!c) return;
   document.getElementById('ab-client-name').textContent = c.name;
+  renderAbHistoryBlock(c);
   document.getElementById('ab-type').value = c.abType || 'classic';
   onAbTypeChange();
   document.getElementById('ab-child').value = c.abChild || '';
@@ -2990,6 +3016,21 @@ function saveAbonement() {
   const birthdayRaw = document.getElementById('ab-birthday').value.trim();
   const birthdayVal = toIsoDate(birthdayRaw) || birthdayRaw;
   const childName = document.getElementById('ab-child').value.trim();
+
+  // История посещения: если у карточки уже был период с другими датами — сохраняем его
+  // в abHistory ПЕРЕД тем, как затереть новыми, чтобы все прошлые абонементы были видны.
+  const prevStart = clients[idx].abStart, prevEnd = clients[idx].abEnd;
+  if (prevStart && prevEnd && (prevStart !== startVal || prevEnd !== endVal)) {
+    clients[idx].abHistory = clients[idx].abHistory || [];
+    clients[idx].abHistory.push({
+      abStart: prevStart,
+      abEnd: prevEnd,
+      abAmount: clients[idx].abAmount || '',
+      abLessons: clients[idx].abLessons || '',
+      abDays: clients[idx].abDays || [],
+      abType: clients[idx].abType || 'classic',
+    });
+  }
 
   clients[idx].abType = abType;
   clients[idx].abChild = document.getElementById('ab-child').value.trim();
@@ -3555,6 +3596,12 @@ function renderActive() {
             <div style="background:#f9fafb;border-radius:8px;padding:7px 9px;"><div style="font-size:9px;color:var(--muted);font-weight:600;margin-bottom:1px;">ТЕЛЕФОН</div><div style="font-size:12px;font-weight:600;">${c.phone||'—'}</div></div>
           </div>
           ${c.abNotes?`<div style="font-size:11px;color:var(--muted);background:#f9fafb;border-radius:8px;padding:7px 9px;margin-bottom:8px;">${c.abNotes}</div>`:''}
+          ${(c.abHistory||[]).length ? `<div style="margin-bottom:8px;">
+            <div onclick="toggleCardHistory(${c.id})" style="cursor:pointer;font-size:11px;color:var(--wave);font-weight:700;display:flex;align-items:center;gap:4px;">📜 История абонементов (${c.abHistory.length}) <span id="ab-hist-arrow-${c.id}">▾</span></div>
+            <div id="ab-hist-${c.id}" style="display:none;margin-top:6px;background:#f9fafb;border-radius:8px;padding:8px 10px;">
+              ${c.abHistory.slice().reverse().map(h => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #eee;"><span>${h.abStart?toRuDate(h.abStart):'—'} → ${h.abEnd?toRuDate(h.abEnd):'—'}</span><span>${h.abAmount?parseFloat(h.abAmount).toLocaleString('ru-RU')+' ₽':''} · ${abTypeLabel(h.abType).label}</span></div>`).join('')}
+            </div>
+          </div>` : ''}
           ${contactButtons(c, true)}
           <div style="display:flex;gap:7px;">
             <button onclick="openAbonementModal(${c.id})" style="flex:2;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">✏️ Изменить</button>
@@ -3580,6 +3627,15 @@ function toggleObzvonList() {
   el.style.display = isOpen ? 'none' : 'block';
   // Обновить стрелку
   const arrow = el.previousElementSibling?.querySelector('div:last-child');
+}
+
+function toggleCardHistory(id) {
+  const el = document.getElementById('ab-hist-' + id);
+  const arrow = document.getElementById('ab-hist-arrow-' + id);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▾' : '▴';
 }
 
 function setActiveSubTab(tab) { activeSubTab = tab; renderActive(); }
