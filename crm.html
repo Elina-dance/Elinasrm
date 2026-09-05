@@ -1674,6 +1674,18 @@ function renderReminders() {
     <div class="date-sub">${todayStr}</div>
   </div>`;
 
+  // Быстрая заметка — написать/стереть, сохраняется между устройствами
+  {
+    const escNote = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    html += `<div style="background:#fffde7;border:1.5px solid #fff59d;border-radius:12px;padding:10px 12px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:11px;font-weight:700;color:#9e8b00;">📝 Заметка</div>
+        <button onclick="clearQuickNote()" style="background:none;border:none;color:#9e8b00;font-size:11px;cursor:pointer;padding:2px 6px;">🗑 Стереть</button>
+      </div>
+      <textarea id="quick-note-text" rows="2" placeholder="Написать что-нибудь на память..." style="width:100%;box-sizing:border-box;border:none;background:transparent;resize:vertical;font-size:13px;font-family:inherit;line-height:1.5;color:#5c4d00;" onchange="saveQuickNote(this.value)">${escNote(quickNote.text)}</textarea>
+    </div>`;
+  }
+
   // ── БЛОК 0: Заявки из Telegram-бота (ожидают подтверждения) ──
   html += renderBotInboxBlock();
 
@@ -4754,6 +4766,8 @@ const ADULTS_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebaseda
 let adults = []; // база взрослых (предзапись) [{id, name, contact, notes}]
 const INFO_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/info.json';
 let studioInfo = { text: '', updatedAt: '' }; // актуальная инфа студии: расписание, цены и т.д. — единый источник истины
+const NOTE_URL = 'https://ocean-crm-c8bcf-default-rtdb.europe-west1.firebasedatabase.app/note.json';
+let quickNote = { text: '', updatedAt: '' }; // быстрая заметка вверху «Напоминаний» — написать/стереть
 let botInbox = []; // заявки из Telegram-бота, ожидающие подтверждения [{key, ...lead}]
 let botChatsCache = []; // последние загруженные диалоги (для отправки ответа админом)
 let tgSyncTimer = null;
@@ -4818,6 +4832,7 @@ async function loadFromFirebase() {
     loadBonuses(true);
     loadAdults(true);
     loadStudioInfo(true);
+    loadQuickNote(true);
     setInterval(() => loadBotInbox(true), 60000);
   } catch(e) {
     clearTimeout(fbTimeout);
@@ -5263,6 +5278,36 @@ function renderStudioInfo() {
         <button onclick="saveStudioInfo()" class="btn-save" style="width:auto;padding:10px 24px;">💾 Сохранить</button>
       </div>
     </div>`;
+}
+
+// ============ БЫСТРАЯ ЗАМЕТКА (вверху Напоминаний, Firebase /note) ============
+async function loadQuickNote(rerender) {
+  try {
+    const resp = await fetch(NOTE_URL);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && typeof data.text === 'string') {
+        quickNote = data;
+        localStorage.setItem('ocean_quick_note', JSON.stringify(quickNote));
+      }
+    }
+  } catch (e) {
+    try { quickNote = JSON.parse(localStorage.getItem('ocean_quick_note') || 'null') || quickNote; } catch (e2) {}
+  }
+  if (rerender && activeTab === 'remind') renderCurrentTab();
+}
+
+function saveQuickNote(text) {
+  quickNote = { text, updatedAt: new Date().toISOString() };
+  localStorage.setItem('ocean_quick_note', JSON.stringify(quickNote));
+  fetch(NOTE_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(quickNote) }).catch(() => {});
+}
+
+function clearQuickNote() {
+  const el = document.getElementById('quick-note-text');
+  if (el) el.value = '';
+  saveQuickNote('');
+  showToast('🗑 Заметка стёрта');
 }
 
 // Ссылка «написать» по контакту: @ник → Telegram, телефон → WhatsApp
