@@ -3994,7 +3994,11 @@ function renderCalendar() {
     const d = new Date(c.trial);
     if (d.getFullYear()!==year || d.getMonth()!==month) return;
     const dNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const isPast = dNorm < todayNorm;
+    // Сегодняшний день считаем «прошедшим» для этой проверки: к моменту, когда отмечаешь
+    // «дошли» сегодня, само пробное уже состоялось — иначе карточка пропадала бы из
+    // календаря сразу после отметки (баг: пропадала только у сегодняшних, у прошлых дней
+    // работало нормально).
+    const isPast = dNorm <= todayNorm;
     if (!isPast && c.status !== 'trial') return;  // будущие: только записанные
     if (isPast && c.status !== 'arrived' && c.status !== 'bought' && c.status !== 'trial') return;
     const day = d.getDate();
@@ -4077,8 +4081,10 @@ function renderCalendar() {
     const hasFutureTrial = trials.some(c=>c.status==='trial') && !isPastDay;
     const hasArrived = trials.some(c=>c.status==='arrived'||c.status==='bought');
     const hasUnmarked = isPastDay && trials.some(c=>c.status==='trial');
-    const cellBg = isSel?'#dbeafe':isToday?'#fff8e1':hasFutureTrial?'#e0f7fa':hasArrived?'#e8f5e9':hasUnmarked?'#fff8e1':'#fafafa';
-    const cellBd = isSel?'var(--wave)':isToday?'var(--yellow)':hasFutureTrial?'#00acc1':hasArrived?'var(--green)':hasUnmarked?'#f57f17':'transparent';
+    // «Дошли» показываем зелёным даже если это сегодня — иначе после отметки «дошли» сегодня
+    // ячейка выглядела бы как обычный «сегодня», будто отметка вообще не сохранилась.
+    const cellBg = isSel?'#dbeafe':hasArrived?'#e8f5e9':isToday?'#fff8e1':hasFutureTrial?'#e0f7fa':hasUnmarked?'#fff8e1':'#fafafa';
+    const cellBd = isSel?'var(--wave)':hasArrived?'var(--green)':isToday?'var(--yellow)':hasFutureTrial?'#00acc1':hasUnmarked?'#f57f17':'transparent';
 
     // Группируем по реальному названию группы
     const groupedActual = {};
