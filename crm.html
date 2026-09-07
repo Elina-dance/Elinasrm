@@ -285,6 +285,16 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Вид абонемента</label>
+        <select id="f-abtype" onchange="onFAbTypeChange()">
+          <option value="classic">Классический</option>
+          <option value="monthly">Помесячный (напоминание 4-го числа, оплата до 5-го)</option>
+          <option value="freeze">С заморозкой (только Малыши)</option>
+        </select>
+        <div id="f-abtype-hint-monthly" style="display:none;margin-top:6px;background:var(--foam);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--wave);line-height:1.5;">📨 При сохранении задача на СМС-напоминание о продлении встанет автоматически на 4-е число следующего месяца (оплата до 5-го).</div>
+        <div id="f-abtype-hint-freeze" style="display:none;margin-top:6px;background:#fff8e1;border-radius:8px;padding:8px 10px;font-size:12px;color:#7a4000;line-height:1.5;">❄️ Только у Малышей. При пропусках абонемент может действовать на неделю (2 занятия) дольше — перед отправкой СМС клиенту сверь пропуски вручную.</div>
+      </div>
+      <div class="form-group">
         <label>Канал / Откуда</label>
         <input id="f-channel" placeholder="Авито / Рабочий тг / Рекомендация">
       </div>
@@ -2471,6 +2481,8 @@ function openAddModal() {
   document.getElementById('modal-title-text').textContent = 'Новый клиент';
   ['f-name','f-phone','f-channel','f-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-group').value='';
+  document.getElementById('f-abtype').value='classic';
+  onFAbTypeChange();
   document.getElementById('f-trial').value='';
   document.getElementById('f-next-call').value = defaultNextCall(1);
   document.getElementById('btn-delete').style.display='none';
@@ -2485,6 +2497,8 @@ function openEditModal(id) {
   document.getElementById('f-name').value=c.name;
   document.getElementById('f-phone').value=c.phone||'';
   document.getElementById('f-group').value=c.group||'';
+  document.getElementById('f-abtype').value=c.abType||'classic';
+  onFAbTypeChange();
   document.getElementById('f-channel').value=c.channel||'';
   document.getElementById('f-trial').value=c.trial||'';
   document.getElementById('f-notes').value=c.notes||'';
@@ -2543,9 +2557,11 @@ function saveClient() {
   const name=document.getElementById('f-name').value.trim();
   if(!name){alert('Введи имя'); return;}
   const phone=document.getElementById('f-phone').value.trim();
+  const abType=document.getElementById('f-abtype').value||'classic';
   const data = {
     name, phone,
     group:document.getElementById('f-group').value,
+    abType,
     channel:document.getElementById('f-channel').value.trim(),
     trial:document.getElementById('f-trial').value,
     notes:document.getElementById('f-notes').value.trim(),
@@ -2569,7 +2585,31 @@ function saveClient() {
 
   if(editingId) {
     const idx=clients.findIndex(x=>x.id===editingId);
-    if(idx>=0) clients[idx]={...clients[idx],...data};
+    if(idx>=0) {
+      const prevAbType = clients[idx].abType || 'classic';
+      clients[idx]={...clients[idx],...data};
+      // Тип абонемента только что переключили на помесячный — ставим задачу на СМС
+      // (4-е число след. месяца, оплата до 5-го), как при сохранении в модалке абонемента.
+      // Не трогаем, если уже был помесячным — иначе безобидное редактирование карточки
+      // сдвигало бы дату уже стоящей задачи.
+      if (abType === 'monthly' && prevAbType !== 'monthly') {
+        const nowD = new Date();
+        const notifyD = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 4);
+        const notifyVal = notifyD.toISOString().split('T')[0];
+        clients[idx].abNotifyDate = notifyVal;
+        clients[idx].tasks = clients[idx].tasks || [];
+        const notifyDT = notifyVal + 'T10:00';
+        const alreadyHasTask = clients[idx].tasks.some(t => t.date === notifyDT && !t.done);
+        if (!alreadyHasTask) {
+          clients[idx].tasks.push({
+            id: Date.now(),
+            date: notifyDT,
+            comment: '📨 Отправить СМС о продлении помесячного абонемента (оплата до 5-го числа).',
+            done: false
+          });
+        }
+      }
+    }
   } else {
     clients.unshift({id:getNextId(),...data,history:[]});
   }
@@ -2918,6 +2958,12 @@ function onAbTypeChange() {
   const t = document.getElementById('ab-type').value;
   document.getElementById('ab-type-hint-monthly').style.display = t === 'monthly' ? 'block' : 'none';
   document.getElementById('ab-type-hint-freeze').style.display = t === 'freeze' ? 'block' : 'none';
+}
+
+function onFAbTypeChange() {
+  const t = document.getElementById('f-abtype').value;
+  document.getElementById('f-abtype-hint-monthly').style.display = t === 'monthly' ? 'block' : 'none';
+  document.getElementById('f-abtype-hint-freeze').style.display = t === 'freeze' ? 'block' : 'none';
 }
 
 function abTypeLabel(t) {
