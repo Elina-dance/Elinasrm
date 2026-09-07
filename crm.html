@@ -280,6 +280,8 @@
           <option>Малыши</option>
           <option>Младшие</option>
           <option>Средние</option>
+          <option>Юниоры</option>
+          <option>Старшие</option>
           <option>Подростки</option>
           <option>Индивидуальные</option>
         </select>
@@ -294,6 +296,7 @@
         <div id="f-abtype-hint-monthly" style="display:none;margin-top:6px;background:var(--foam);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--wave);line-height:1.5;">📨 При сохранении задача на СМС-напоминание о продлении встанет автоматически на 4-е число следующего месяца (оплата до 5-го).</div>
         <div id="f-abtype-hint-freeze" style="display:none;margin-top:6px;background:#fff8e1;border-radius:8px;padding:8px 10px;font-size:12px;color:#7a4000;line-height:1.5;">❄️ Только у Малышей. При пропусках абонемент может действовать на неделю (2 занятия) дольше — перед отправкой СМС клиенту сверь пропуски вручную.</div>
       </div>
+      <div id="f-ab-history-block" style="display:none;margin-bottom:14px;"></div>
       <div class="form-group">
         <label>Канал / Откуда</label>
         <input id="f-channel" placeholder="Авито / Рабочий тг / Рекомендация">
@@ -638,6 +641,8 @@
           <option>Малыши</option>
           <option>Младшие</option>
           <option>Средние</option>
+          <option>Юниоры</option>
+          <option>Старшие</option>
           <option>Подростки</option>
           <option>Индивидуальные</option>
         </select>
@@ -1236,7 +1241,7 @@ function render() {
   if (activeTab==='info') { renderStudioInfo(); return; }
   if (activeTab==='table') { renderTable(); return; }
 
-  const GROUP_ORDER_ALL = ['Индивидуальные','Малыши','Младшие','Средние','Подростки'];
+  const GROUP_ORDER_ALL = ['Индивидуальные','Малыши','Младшие','Средние','Юниоры','Старшие','Подростки'];
   const list = filterClients().sort((a,b) => {
     const ga = GROUP_ORDER_ALL.indexOf(a.group||'');
     const gb = GROUP_ORDER_ALL.indexOf(b.group||'');
@@ -2483,6 +2488,8 @@ function openAddModal() {
   document.getElementById('f-group').value='';
   document.getElementById('f-abtype').value='classic';
   onFAbTypeChange();
+  document.getElementById('f-ab-history-block').style.display='none';
+  document.getElementById('f-ab-history-block').innerHTML='';
   document.getElementById('f-trial').value='';
   document.getElementById('f-next-call').value = defaultNextCall(1);
   document.getElementById('btn-delete').style.display='none';
@@ -2499,6 +2506,7 @@ function openEditModal(id) {
   document.getElementById('f-group').value=c.group||'';
   document.getElementById('f-abtype').value=c.abType||'classic';
   onFAbTypeChange();
+  renderAbHistoryBlock(c, 'f-ab-history-block');
   document.getElementById('f-channel').value=c.channel||'';
   document.getElementById('f-trial').value=c.trial||'';
   document.getElementById('f-notes').value=c.notes||'';
@@ -2973,8 +2981,8 @@ function abTypeLabel(t) {
 }
 
 // Показывает прошлые периоды абонемента (даты, сумма, вид) — история посещения на карточке
-function renderAbHistoryBlock(c) {
-  const el = document.getElementById('ab-history-block');
+function renderAbHistoryBlock(c, elId) {
+  const el = document.getElementById(elId || 'ab-history-block');
   const hist = c.abHistory || [];
   if (!hist.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const rows = hist.slice().reverse().map(h => {
@@ -3595,7 +3603,7 @@ function renderActive() {
 
   } else {
     const noData = allBought.filter(c=>!c.abChild);
-    const GROUP_ORDER = ['Малыши','Младшие','Средние','Подростки','Индивидуальные'];
+    const GROUP_ORDER = ['Малыши','Младшие','Средние','Юниоры','Старшие','Подростки','Индивидуальные'];
     const withData = allBought.filter(c=>c.abChild).sort((a,b)=>{
       const ga = GROUP_ORDER.indexOf(a.abGroup||a.group||'');
       const gb = GROUP_ORDER.indexOf(b.abGroup||b.group||'');
@@ -4020,10 +4028,12 @@ const CAL_GROUPS = {
   'Шестилетки':     { bg:'#fff8e1', color:'#f57f17' },
   'Младшие':        { bg:'#e3f2fd', color:'#1565c0' },
   'Средние':        { bg:'#e8f5e9', color:'#2e7d32' },
+  'Юниоры':         { bg:'#ede7f6', color:'#4527a0' },
+  'Старшие':        { bg:'#fbe9e7', color:'#bf360c' },
   'Подростки':      { bg:'#fff3e0', color:'#e65100' },
   'Индивидуальные': { bg:'#f3e5f5', color:'#6a1b9a' },
 };
-const CAL_GROUP_ORDER = ['Индивидуальные','Малыши','Шестилетки','Младшие','Средние','Подростки'];
+const CAL_GROUP_ORDER = ['Индивидуальные','Малыши','Шестилетки','Младшие','Средние','Юниоры','Старшие','Подростки'];
 
 function renderCalendar() {
   const el = document.getElementById('content');
@@ -4084,6 +4094,7 @@ function renderCalendar() {
       'Малыши новые 3+':'Мал.нов.','Малыши 3+':'Малыши',
       'Младшие 4-5':'Мл.4-5','Младшие 5-6':'Мл.5-6',
       'Средние 7+':'Средние','Шестилетки 6-7':'Шест.',
+      'Юниоры':'Юниоры','Старшие':'Старшие',
       'Подростки':'Подр.','Индивидуальные':'Инд.'
     };
     return m[g] || g.split(/\s/)[0].slice(0,7);
