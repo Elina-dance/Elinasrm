@@ -4032,8 +4032,9 @@ const CAL_GROUPS = {
   'Старшие':        { bg:'#fbe9e7', color:'#bf360c' },
   'Подростки':      { bg:'#fff3e0', color:'#e65100' },
   'Индивидуальные': { bg:'#f3e5f5', color:'#6a1b9a' },
+  'Без группы':     { bg:'#f5f5f5', color:'#757575' },
 };
-const CAL_GROUP_ORDER = ['Индивидуальные','Малыши','Шестилетки','Младшие','Средние','Юниоры','Старшие','Подростки'];
+const CAL_GROUP_ORDER = ['Индивидуальные','Малыши','Шестилетки','Младшие','Средние','Юниоры','Старшие','Подростки','Без группы'];
 
 // Дошёл ли клиент до пробного хоть раз — исторический факт, который не должен исчезать,
 // если статус потом сменился (например, «дошли», а через месяц «неактуально» — отказ
@@ -4208,7 +4209,7 @@ function renderCalendar() {
       </div>`;
     } else {
       const byGroup = {};
-      dayClients.forEach(c=>{ const g=c.group||'Малыши'; if(!byGroup[g]) byGroup[g]=[]; byGroup[g].push(c); });
+      dayClients.forEach(c=>{ const g=c.group||'Без группы'; if(!byGroup[g]) byGroup[g]=[]; byGroup[g].push(c); });
       Object.values(byGroup).forEach(arr=>arr.sort((a,b)=>new Date(a.trial)-new Date(b.trial)));
 
       const arrivedCnt = dayClients.filter(c=>everAttended(c)).length;
