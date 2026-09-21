@@ -1016,10 +1016,12 @@ function _cloudClientsToArray(raw) {
 //     в облако плоским объектом. Так переход на новую схему для уже мигрированных
 //     карточек не откатывается назад при обычном редактировании в CRM.
 const ROLE_RU = { mother: 'мама', father: 'папа', grandmother: 'бабушка', grandfather: 'дедушка', aunt: 'тётя', uncle: 'дядя', self: '', other: '' };
+// [а-яё]* — а не фиксированный набор окончаний, иначе от "бабушка" после вырезания
+// корня "бабушк" остаётся висящая "а" (баг, найденный при тестовой миграции).
 const ROLE_KEYWORDS = [
-  [/бабушк/i, 'grandmother'], [/дедушк/i, 'grandfather'],
-  [/мам[аеу]/i, 'mother'], [/пап[аеу]/i, 'father'],
-  [/тёт[яеию]|тет[яеию]/i, 'aunt'], [/дяд[яеию]/i, 'uncle'],
+  [/бабушк[а-яё]*/i, 'grandmother'], [/дедушк[а-яё]*/i, 'grandfather'],
+  [/мам[а-яё]*/i, 'mother'], [/пап[а-яё]*/i, 'father'],
+  [/тёт[а-яё]*|тет[а-яё]*/i, 'aunt'], [/дяд[а-яё]*/i, 'uncle'],
 ];
 const AGE_RE = /(\d{1,2})(?:[.,](\d{1,2}))?\s*(?:л\.|лет|года|год|г\.)/gi;
 
@@ -1049,8 +1051,11 @@ function ageObsToSuffix(ao) {
 // confidence:'low', и вызывающий код должен не пытаться разбивать имя.
 function parseNameToPeople(name) {
   const raw = String(name || '').trim();
-  const parts = raw.split(/—|-{1,2}(?=\s*(мама|папа|бабушк|дедушк))/i);
-  const studentsPart = (parts[0] || raw).trim();
+  // Скобки почти всегда — техническая пометка (д/с, дата, уточнение), а не часть
+  // имени. Убираем целиком, иначе после чистки остаются обрывки вроде "(д/с 45)".
+  const clean = raw.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim() || raw;
+  const parts = clean.split(/—|-{1,2}(?=\s*(мама|папа|бабушк|дедушк))/i);
+  const studentsPart = (parts[0] || clean).trim();
   const contactPart = parts.slice(1).join(' ').trim();
 
   AGE_RE.lastIndex = 0;
@@ -1187,22 +1192,30 @@ function flatToSchemaV2(flat) {
   next.contacts = next.contacts || {};
   const contactIds = Object.keys(next.contacts);
   const parsed = parseNameToPeople(flat.name);
-  if (!contactIds.length) { next.contacts.c1 = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push('c1'); }
-  const primaryContactId = contactIds[0];
-  const primaryContact = next.contacts[primaryContactId];
-  primaryContact.phone = normalizePhone(flat.phone) || primaryContact.phone || null;
-  // abMom (из формы абонемента) — приоритетнее общего разбора f-name, это явный ввод
-  if (flat.abMom) { primaryContact.name = flat.abMom; primaryContact.role = 'mother'; }
-  else if (parsed.confidence === 'high' && parsed.contacts && parsed.contacts.length) {
-    // остальные контакты (папа/бабушка и т.д.) — по индексу на c2, c3..., не создаём заново при каждой правке
-    parsed.contacts.forEach((pc, i) => {
-      let cid = contactIds[i];
-      if (!cid) { cid = 'c' + (contactIds.length + 1); next.contacts[cid] = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push(cid); }
-      const c = next.contacts[cid];
-      if (pc.name) c.name = pc.name;
-      if (pc.role !== 'unknown') c.role = pc.role;
+  // abMom (из формы абонемента) — приоритетнее общего разбора f-name для МАМЫ конкретно,
+  // но остальные контакты (папа/бабушка...), которые разбор нашёл в строке name,
+  // всё равно должны попасть в карточку — раньше они здесь молча терялись.
+  const desiredContacts = [];
+  if (flat.abMom) desiredContacts.push({ name: flat.abMom, role: 'mother' });
+  if (parsed.confidence === 'high' && parsed.contacts) {
+    parsed.contacts.forEach(pc => {
+      if (flat.abMom && pc.role === 'mother') return; // мама уже учтена через abMom
+      desiredContacts.push(pc);
     });
   }
+  // При низкой уверенности разбора контакт по тем же причинам, что и ученика (см. ниже),
+  // не синтезируем из обрубков текста — оставляем карточку без контакта, а не с "мусором".
+  if (!desiredContacts.length && parsed.confidence === 'high' && parsed.contact && parsed.contact.name) desiredContacts.push(parsed.contact);
+  if (!contactIds.length && !desiredContacts.length) { next.contacts.c1 = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push('c1'); }
+  desiredContacts.forEach((pc, i) => {
+    let cid = contactIds[i];
+    if (!cid) { cid = 'c' + (contactIds.length + 1); next.contacts[cid] = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push(cid); }
+    const c = next.contacts[cid];
+    if (pc.name) c.name = pc.name;
+    if (pc.role !== 'unknown') c.role = pc.role;
+  });
+  const primaryContactId = contactIds[0];
+  next.contacts[primaryContactId].phone = normalizePhone(flat.phone) || next.contacts[primaryContactId].phone || null;
 
   next.students = next.students || {};
   const studentIds = Object.keys(next.students);
