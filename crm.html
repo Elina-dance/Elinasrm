@@ -995,8 +995,203 @@ function _refreshSyncedSnapshot() {
 // так каждая запись адресуется своим id независимо от порядка/количества других.
 function _cloudClientsToArray(raw) {
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw.filter(Boolean);
-  return Object.values(raw).filter(Boolean);
+  const list = Array.isArray(raw) ? raw.filter(Boolean) : Object.values(raw).filter(Boolean);
+  return list.map(c => (c && c.schemaVersion === 2) ? schemaV2ToFlat(c) : c);
+}
+
+// ============ АДАПТЕР SCHEMA V2 (contacts/students/trials/subscriptions) ============
+// Новая целевая структура хранения (для автоответчика) — /crm/clients/<id> с
+// вложенными contacts/students/trials/subscriptions вместо плоских полей.
+// Вся остальная логика приложения (рендер, фильтры, календарь, формы) продолжает
+// работать с ПЛОСКИМ объектом клиента, как раньше. Эти два адаптера — единственная
+// граница между старой формой (в памяти) и новой (в Firebase):
+//   schemaV2ToFlat() — читая из облака запись со schemaVersion:2, разворачивает её
+//     в привычные плоские поля (name/phone/channel/abStart/...), чтобы остальной код
+//     ничего не заметил. Разворачиваемая запись прикрепляется как c.__v2, чтобы при
+//     сохранении можно было восстановить стабильные id (c1/s1/sub1...), а не плодить
+//     новые при каждом редактировании.
+//   flatToSchemaV2() — обратное преобразование при записи. ВКЛЮЧАЕТСЯ только для
+//     карточек, которые уже пришли как schemaVersion:2 (несут c.__v2) — карточки,
+//     ещё не мигрированные (обычный плоский вид без __v2), как и раньше пишутся
+//     в облако плоским объектом. Так переход на новую схему для уже мигрированных
+//     карточек не откатывается назад при обычном редактировании в CRM.
+const ROLE_RU = { mother: 'мама', father: 'папа', grandmother: 'бабушка', grandfather: 'дедушка', aunt: 'тётя', uncle: 'дядя', self: '', other: '' };
+const ROLE_KEYWORDS = [
+  [/бабушк/i, 'grandmother'], [/дедушк/i, 'grandfather'],
+  [/мам[аеу]/i, 'mother'], [/пап[аеу]/i, 'father'],
+  [/тёт[яеию]|тет[яеию]/i, 'aunt'], [/дяд[яеию]/i, 'uncle'],
+];
+const AGE_RE = /(\d{1,2})(?:[.,](\d{1,2}))?\s*(?:л\.|лет|года|год|г\.)/gi;
+
+function normalizePhone(p) {
+  if (!p) return '';
+  const digits = String(p).replace(/\D/g, '');
+  if (!digits) return String(p).trim(); // не похоже на телефон (ник/юзернейм) — оставляем как есть
+  const ten = digits.replace(/^[78]/, '').slice(-10);
+  return ten.length === 10 ? '+7' + ten : String(p).trim();
+}
+
+function ageObsToSuffix(ao) {
+  if (!ao) return '';
+  let s = String(ao.years ?? '');
+  if (ao.months != null && ao.months !== '') s += ',' + ao.months;
+  return s ? s + ' л.' : '';
+}
+
+// Разбирает старое поле name на учеников + контакт (эвристика, best-effort).
+// Используется и при миграции, и при обратной записи отредактированного f-name.
+function parseNameToPeople(name) {
+  const raw = String(name || '').trim();
+  const parts = raw.split(/—|-{1,2}(?=\s*(мама|папа|бабушк|дедушк))/i);
+  let studentsPart = parts[0] || raw;
+  let contactPart = parts.slice(1).join(' ').trim();
+  // студенты через "/" или ","
+  const studentNames = studentsPart.split(/\s*\/\s*/).map(s => s.trim()).filter(Boolean);
+  const students = (studentNames.length ? studentNames : [studentsPart]).map(chunk => {
+    AGE_RE.lastIndex = 0;
+    const m = AGE_RE.exec(chunk);
+    const nameOnly = chunk.replace(AGE_RE, '').replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
+    const ao = m ? { years: parseInt(m[1], 10), months: m[2] ? parseInt(m[2], 10) : null } : null;
+    return { name: nameOnly || chunk.trim(), ageObservation: ao };
+  });
+  let role = 'unknown', contactName = contactPart;
+  for (const [re, r] of ROLE_KEYWORDS) {
+    if (re.test(contactPart)) { role = r; contactName = contactPart.replace(re, '').replace(/[,:]/g, ' ').replace(/\s+/g, ' ').trim(); break; }
+  }
+  if (!contactName && !students.length) contactName = raw;
+  return { students, contact: { name: contactName, role } };
+}
+
+function schemaV2ToFlat(raw) {
+  const crm = raw.crm || {};
+  const contacts = raw.contacts || {};
+  const students = raw.students || {};
+  const subs = raw.subscriptions || {};
+  const trials = raw.trials || {};
+  const contactIds = Object.keys(contacts);
+  const studentIds = Object.keys(students);
+  const primaryContactId = contactIds[0];
+  const primaryContact = primaryContactId ? contacts[primaryContactId] : null;
+  const momContact = contactIds.map(id => contacts[id]).find(c => c.role === 'mother') || primaryContact;
+  const primaryStudentId = studentIds[0];
+  const primaryStudent = primaryStudentId ? students[primaryStudentId] : null;
+
+  // самая свежая подписка (по start), привязанная к любому студенту этой карточки
+  const subList = Object.values(subs).sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+  const primarySub = subList[0] || null;
+  // ближайшая/последняя пробная
+  const trialList = Object.values(trials).sort((a, b) => (b.scheduledAt || '').localeCompare(a.scheduledAt || ''));
+  const primaryTrial = trialList[0] || null;
+
+  const nameStr = studentIds.map(id => {
+    const s = students[id];
+    const suf = s.ageObservation ? ' ' + ageObsToSuffix(s.ageObservation) : '';
+    return s.name + suf;
+  }).join(' / ') + (momContact && momContact.name ? ' — ' + (ROLE_RU[momContact.role] || '') + ' ' + momContact.name : '');
+
+  const flat = {
+    id: raw.id,
+    schemaVersion: 2,
+    __v2: raw,
+    name: nameStr.trim().replace(/^—\s*/, '') || ('Клиент ' + raw.id),
+    phone: normalizePhone(primaryContact && primaryContact.phone),
+    channel: crm.source || '',
+    group: (primaryStudent && primaryStudent.group) || '',
+    status: crm.status || 'new',
+    notes: crm.notes || '',
+    nextCall: crm.nextCall || '',
+    tasks: crm.tasks || [],
+    history: raw.crmHistory || [],
+    updatedAt: raw.updatedAt || '',
+    trial: primaryTrial ? String(primaryTrial.scheduledAt || '').slice(0, 16) : '',
+    leftDate: crm.exit ? crm.exit.date || undefined : undefined,
+    leftReason: crm.exit ? crm.exit.reason || undefined : undefined,
+    abChild: primaryStudent ? primaryStudent.name : '',
+    abMom: momContact ? momContact.name : '',
+    abGroup: primaryStudent ? primaryStudent.group : '',
+    abBirthday: primaryStudent ? primaryStudent.birthDate || undefined : undefined,
+    abType: primarySub ? primarySub.type : 'classic',
+    abStart: primarySub ? primarySub.start : '',
+    abEnd: primarySub ? primarySub.end : '',
+    abAmount: primarySub ? primarySub.amount : '',
+    abLessons: primarySub ? primarySub.lessonsTotal : '',
+    abDays: primarySub ? primarySub.days || [] : [],
+    abNotes: primarySub ? primarySub.notes || '' : '',
+    abNotifyDate: primarySub ? primarySub.notifyDate : '',
+    abRenewalPaid: primarySub ? !!primarySub.renewalPaid : false,
+    abHistory: (raw.subscriptionHistory || []).map(h => ({
+      abStart: h.start, abEnd: h.end, abAmount: h.amount, abLessons: h.lessonsTotal, abDays: h.days, abType: h.type,
+    })),
+  };
+  return flat;
+}
+
+function flatToSchemaV2(flat) {
+  const prev = flat.__v2;
+  if (!prev) return null; // карточка ещё не мигрирована — пишем как раньше, плоским объектом
+  const next = JSON.parse(JSON.stringify(prev));
+  next.crm = next.crm || {};
+  next.crm.status = flat.status;
+  next.crm.source = flat.channel || next.crm.source || '';
+  next.crm.nextCall = flat.nextCall || null;
+  next.crm.notes = flat.notes || '';
+  next.crm.tasks = flat.tasks || [];
+  next.crm.exit = { reason: flat.leftReason || null, date: flat.leftDate || null };
+  next.crmHistory = flat.history || [];
+  next.updatedAt = flat.updatedAt || new Date().toISOString();
+
+  next.contacts = next.contacts || {};
+  const contactIds = Object.keys(next.contacts);
+  let primaryContactId = contactIds[0];
+  if (!primaryContactId) { primaryContactId = 'c1'; next.contacts.c1 = { name: '', role: 'unknown', phone: null, channels: {} }; }
+  const parsed = parseNameToPeople(flat.name);
+  const primaryContact = next.contacts[primaryContactId];
+  primaryContact.phone = normalizePhone(flat.phone) || primaryContact.phone || null;
+  // abMom/abChild (из формы абонемента) — приоритетнее общего разбора f-name, это явный ввод
+  if (flat.abMom) primaryContact.name = flat.abMom;
+  else if (parsed.contact.name) primaryContact.name = parsed.contact.name;
+  if (parsed.contact.role !== 'unknown') primaryContact.role = parsed.contact.role;
+
+  next.students = next.students || {};
+  const studentIds = Object.keys(next.students);
+  const parsedStudents = flat.abChild ? [{ name: flat.abChild, ageObservation: null }] : parsed.students;
+  if (!studentIds.length) { next.students.s1 = { name: '', type: 'child', contactId: null, birthDate: null, ageObservation: null, group: '' }; studentIds.push('s1'); }
+  parsedStudents.forEach((ps, i) => {
+    let sid = studentIds[i];
+    if (!sid) { sid = 's' + (studentIds.length + 1); next.students[sid] = { name: '', type: 'child', contactId: null, birthDate: null, ageObservation: null, group: '' }; studentIds.push(sid); }
+    const s = next.students[sid];
+    s.name = ps.name || s.name;
+    if (ps.ageObservation) s.ageObservation = ps.ageObservation;
+    s.group = flat.group || s.group || '';
+  });
+  if (flat.abBirthday) next.students[studentIds[0]].birthDate = flat.abBirthday;
+
+  const primaryStudentId = studentIds[0];
+  next.trials = next.trials || {};
+  if (flat.trial) {
+    const trialIds = Object.keys(next.trials);
+    const tid = trialIds[0] || 't1';
+    // студия всегда работает в часовом поясе Сочи (+03:00, без перехода на летнее время)
+    const scheduledAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(flat.trial) ? flat.trial + ':00+03:00' : flat.trial;
+    next.trials[tid] = { studentId: primaryStudentId, scheduledAt };
+  }
+
+  if (flat.abStart || flat.abAmount || flat.abLessons) {
+    next.subscriptions = next.subscriptions || {};
+    const subIds = Object.keys(next.subscriptions);
+    const subId = subIds[0] || 'sub1';
+    next.subscriptions[subId] = {
+      studentId: primaryStudentId, type: flat.abType || 'classic', amount: flat.abAmount || '',
+      lessonsTotal: flat.abLessons || '', start: flat.abStart || '', end: flat.abEnd || '',
+      notifyDate: flat.abNotifyDate || '', renewalPaid: !!flat.abRenewalPaid, days: flat.abDays || [], notes: flat.abNotes || '',
+    };
+  }
+  next.subscriptionHistory = (flat.abHistory || []).map(h => ({
+    studentId: primaryStudentId, type: h.abType, amount: h.abAmount, lessonsTotal: h.abLessons, start: h.abStart, end: h.abEnd, days: h.abDays,
+  }));
+
+  delete next.__v2;
+  return next;
 }
 let activeTab = localStorage.getItem('ocean_active_tab') || 'remind';
 let editingId = null;
@@ -5089,7 +5284,7 @@ async function fbSave() {
     }
 
     const updates = {};
-    localDirty.forEach((c, id) => { updates['clients/' + id] = c; });
+    localDirty.forEach((c, id) => { updates['clients/' + id] = flatToSchemaV2(c) || c; });
     localDeleted.forEach(id => { updates['clients/' + id] = null; });
     updates['archive'] = JSON.parse(localStorage.getItem('ocean_month_archive') || '{}');
     updates['savedAt'] = new Date(now).toISOString();
