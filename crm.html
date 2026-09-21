@@ -1040,12 +1040,45 @@ function ageObsToSuffix(ao) {
 
 // Разбирает старое поле name на учеников + контакт (эвристика, best-effort).
 // Используется и при миграции, и при обратной записи отредактированного f-name.
+// В базе встречаются ДВА несовместимых формата:
+//   A) «Ребёнок N л. — мама Имя»      — возраст стоит ДО тире, у ребёнка
+//   B) «Имя — мама Ребёнка, N л.»     — возраст стоит ПОСЛЕ тире, у ребёнка
+//      (тут «мама» относится к ребёнку в родительном падеже, не к имени рядом)
+// Различаем их по тому, с какой стороны от тире нашёлся возраст. Если возраст
+// нашёлся с обеих сторон (или роль не определена) — не гадаем, отдаём
+// confidence:'low', и вызывающий код должен не пытаться разбивать имя.
 function parseNameToPeople(name) {
   const raw = String(name || '').trim();
   const parts = raw.split(/—|-{1,2}(?=\s*(мама|папа|бабушк|дедушк))/i);
-  let studentsPart = parts[0] || raw;
-  let contactPart = parts.slice(1).join(' ').trim();
-  // студенты через "/" или ","
+  const studentsPart = (parts[0] || raw).trim();
+  const contactPart = parts.slice(1).join(' ').trim();
+
+  AGE_RE.lastIndex = 0;
+  const studentsPartHasAge = AGE_RE.test(studentsPart);
+  AGE_RE.lastIndex = 0;
+  const contactPartHasAge = AGE_RE.test(contactPart);
+
+  let role = 'unknown', roleRe = null;
+  for (const [re, r] of ROLE_KEYWORDS) {
+    if (re.test(contactPart)) { role = r; roleRe = re; break; }
+  }
+
+  // Формат B: возраст найден только после тире — значит после тире описан ребёнок
+  // («мама Ребёнка, N л.»), а имя контакта — то, что стояло до тире.
+  if (role !== 'unknown' && contactPartHasAge && !studentsPartHasAge) {
+    AGE_RE.lastIndex = 0;
+    const m = AGE_RE.exec(contactPart);
+    const childName = contactPart.replace(roleRe, '').replace(AGE_RE, '').replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
+    const ao = m ? { years: parseInt(m[1], 10), months: m[2] ? parseInt(m[2], 10) : null } : null;
+    const contacts = [{ name: studentsPart, role }];
+    return {
+      confidence: 'high',
+      students: [{ name: childName || contactPart, ageObservation: ao }],
+      contacts, contact: contacts[0],
+    };
+  }
+
+  // Формат A (обычный случай) — студенты через "/" перед тире.
   const studentNames = studentsPart.split(/\s*\/\s*/).map(s => s.trim()).filter(Boolean);
   const students = (studentNames.length ? studentNames : [studentsPart]).map(chunk => {
     AGE_RE.lastIndex = 0;
@@ -1054,12 +1087,23 @@ function parseNameToPeople(name) {
     const ao = m ? { years: parseInt(m[1], 10), months: m[2] ? parseInt(m[2], 10) : null } : null;
     return { name: nameOnly || chunk.trim(), ageObservation: ao };
   });
-  let role = 'unknown', contactName = contactPart;
-  for (const [re, r] of ROLE_KEYWORDS) {
-    if (re.test(contactPart)) { role = r; contactName = contactPart.replace(re, '').replace(/[,:]/g, ' ').replace(/\s+/g, ' ').trim(); break; }
-  }
-  if (!contactName && !students.length) contactName = raw;
-  return { students, contact: { name: contactName, role } };
+
+  // Несколько контактов через запятую: «мама Марина, папа Сергей» — каждый чанк
+  // проверяем на свою роль-метку отдельно, а не общим regex.test() на всю строку.
+  const contactChunks = contactPart.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
+  const contacts = contactChunks.map(chunk => {
+    let cRole = 'unknown', cRe = null;
+    for (const [re, r] of ROLE_KEYWORDS) { if (re.test(chunk)) { cRole = r; cRe = re; break; } }
+    const cName = cRe ? chunk.replace(cRe, '').replace(/[,:]/g, ' ').replace(/\s+/g, ' ').trim() : chunk;
+    return { name: cName, role: cRole };
+  }).filter(c => c.name);
+  if (!contacts.length && contactPart) contacts.push({ name: contactPart, role: 'unknown' });
+  if (!contacts.length && !students.length) contacts.push({ name: raw, role: 'unknown' });
+
+  // Возраст найден по обе стороны от тире (или роль не распознана вовсе) —
+  // неясно, какой формат перед нами, разбивку лучше не доверять автоматике.
+  const ambiguous = studentsPartHasAge && contactPartHasAge;
+  return { confidence: ambiguous ? 'low' : 'high', students, contacts, contact: contacts[0] || { name: '', role: 'unknown' } };
 }
 
 function schemaV2ToFlat(raw) {
@@ -1142,19 +1186,31 @@ function flatToSchemaV2(flat) {
 
   next.contacts = next.contacts || {};
   const contactIds = Object.keys(next.contacts);
-  let primaryContactId = contactIds[0];
-  if (!primaryContactId) { primaryContactId = 'c1'; next.contacts.c1 = { name: '', role: 'unknown', phone: null, channels: {} }; }
   const parsed = parseNameToPeople(flat.name);
+  if (!contactIds.length) { next.contacts.c1 = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push('c1'); }
+  const primaryContactId = contactIds[0];
   const primaryContact = next.contacts[primaryContactId];
   primaryContact.phone = normalizePhone(flat.phone) || primaryContact.phone || null;
-  // abMom/abChild (из формы абонемента) — приоритетнее общего разбора f-name, это явный ввод
-  if (flat.abMom) primaryContact.name = flat.abMom;
-  else if (parsed.contact.name) primaryContact.name = parsed.contact.name;
-  if (parsed.contact.role !== 'unknown') primaryContact.role = parsed.contact.role;
+  // abMom (из формы абонемента) — приоритетнее общего разбора f-name, это явный ввод
+  if (flat.abMom) { primaryContact.name = flat.abMom; primaryContact.role = 'mother'; }
+  else if (parsed.confidence === 'high' && parsed.contacts && parsed.contacts.length) {
+    // остальные контакты (папа/бабушка и т.д.) — по индексу на c2, c3..., не создаём заново при каждой правке
+    parsed.contacts.forEach((pc, i) => {
+      let cid = contactIds[i];
+      if (!cid) { cid = 'c' + (contactIds.length + 1); next.contacts[cid] = { name: '', role: 'unknown', phone: null, channels: {} }; contactIds.push(cid); }
+      const c = next.contacts[cid];
+      if (pc.name) c.name = pc.name;
+      if (pc.role !== 'unknown') c.role = pc.role;
+    });
+  }
 
   next.students = next.students || {};
   const studentIds = Object.keys(next.students);
-  const parsedStudents = flat.abChild ? [{ name: flat.abChild, ageObservation: null }] : parsed.students;
+  // Низкая уверенность разбора — не трогаем уже сложившуюся разбивку по ученикам,
+  // только держим имя первого ученика синхронизированным с исходной строкой целиком.
+  const parsedStudents = flat.abChild
+    ? [{ name: flat.abChild, ageObservation: null }]
+    : (parsed.confidence === 'high' ? parsed.students : [{ name: flat.name, ageObservation: null }]);
   if (!studentIds.length) { next.students.s1 = { name: '', type: 'child', contactId: null, birthDate: null, ageObservation: null, group: '' }; studentIds.push('s1'); }
   parsedStudents.forEach((ps, i) => {
     let sid = studentIds[i];
