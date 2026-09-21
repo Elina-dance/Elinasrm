@@ -979,7 +979,7 @@ const TABS_CFG = [
 ];
 
 // Data lives in Firebase + localStorage
-const INITIAL_DATA = [];;
+const INITIAL_DATA = []; // Реальные данные клиентов не хранятся в публичном HTML — только в Firebase, доступны после входа.
 
 // ============ STATE ============
 let clients = [];
@@ -6050,7 +6050,6 @@ autoDedup(true);
 updateExportBadge();
 render();
 setTimeout(() => loadFromFirebase(), 500);
-
 
 // Проверка дублей при загрузке (с задержкой)
 setTimeout(() => {
