@@ -1150,6 +1150,7 @@ function schemaV2ToFlat(raw) {
     notes: crm.notes || '',
     nextCall: crm.nextCall || '',
     tasks: crm.tasks || [],
+    msgTasks: crm.msgTasks || [],
     history: raw.crmHistory || [],
     updatedAt: raw.updatedAt || '',
     trial: primaryTrial ? String(primaryTrial.scheduledAt || '').slice(0, 16) : '',
@@ -1185,6 +1186,7 @@ function flatToSchemaV2(flat) {
   next.crm.nextCall = flat.nextCall || null;
   next.crm.notes = flat.notes || '';
   next.crm.tasks = flat.tasks || [];
+  next.crm.msgTasks = flat.msgTasks || [];
   next.crm.exit = { reason: flat.leftReason || null, date: flat.leftDate || null };
   next.crmHistory = flat.history || [];
   next.updatedAt = flat.updatedAt || new Date().toISOString();
