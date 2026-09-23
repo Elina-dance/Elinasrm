@@ -1331,6 +1331,20 @@ function defaultNextCall(daysFromNow) {
   return d.toISOString().slice(0, 16);
 }
 
+// «Ждём ответа» — карточка не должна зависать без напоминания о себе: ставим
+// её и в «Задачи» (напомнить написать), и через nextCall — в «Просроченные»,
+// если клиент так и не ответил. Вызывается при переходе В waiting из любого
+// другого статуса (из формы редактирования, лога звонка или быстрой кнопки).
+const WAITING_MSG_TASK_TEXT = '📨 Ждём ответа клиента — если тишина, напомнить о себе.';
+function ensureWaitingMsgTask(idx) {
+  const c = clients[idx];
+  c.msgTasks = c.msgTasks || [];
+  const hasPending = c.msgTasks.some(t => !t.sent && t.text === WAITING_MSG_TASK_TEXT);
+  if (!hasPending) {
+    c.msgTasks.push({ id: Date.now(), text: WAITING_MSG_TASK_TEXT, createdAt: new Date().toISOString(), sent: false, sentAt: null });
+  }
+}
+
 
 // ============ STORAGE ============
 function load() {
@@ -2332,6 +2346,7 @@ function changeStatusInline(id, newStatus) {
     clients[idx].status = 'waiting';
     clients[idx].nextCall = defaultNextCall(2);
     clients[idx].updatedAt = new Date().toISOString();
+    ensureWaitingMsgTask(idx);
     if(!clients[idx].history) clients[idx].history=[];
     clients[idx].history.push({
       date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
@@ -2809,6 +2824,11 @@ function selectStatus(s) {
   } else {
     laterHelper.style.display = 'none';
   }
+  // «Ждём ответа» — если дата звонка не стоит, подставляем напоминание через 2 дня,
+  // чтобы карточка не зависла без задачи (как раньше молча происходило).
+  if (s === 'waiting' && !document.getElementById('f-next-call').value) {
+    document.getElementById('f-next-call').value = defaultNextCall(2);
+  }
   // Для действующих очищаем дату звонка — она необязательна
   if (s === 'bought') {
     document.getElementById('f-next-call').value = '';
@@ -2859,7 +2879,9 @@ function saveClient() {
     const idx=clients.findIndex(x=>x.id===editingId);
     if(idx>=0) {
       const prevAbType = clients[idx].abType || 'classic';
+      const prevStatus = clients[idx].status;
       clients[idx]={...clients[idx],...data};
+      if (data.status === 'waiting' && prevStatus !== 'waiting') ensureWaitingMsgTask(idx);
       // Тип абонемента только что переключили на помесячный — ставим задачу на СМС
       // (4-е число след. месяца, оплата до 5-го), как при сохранении в модалке абонемента.
       // Не трогаем, если уже был помесячным — иначе безобидное редактирование карточки
@@ -2884,6 +2906,7 @@ function saveClient() {
     }
   } else {
     clients.unshift({id:getNextId(),...data,history:[]});
+    if (data.status === 'waiting') ensureWaitingMsgTask(0);
   }
   save(); closeModal('edit-modal'); updateExportBadge(); render();
 }
@@ -2966,9 +2989,11 @@ function selectLogStatus(s) {
 function saveLog() {
   const result=document.getElementById('log-result').value.trim();
   if(!result){alert('Напиши итог звонка'); return;}
-  const nextCall=document.getElementById('log-next-call').value;
+  let nextCall=document.getElementById('log-next-call').value;
   const idx=clients.findIndex(x=>x.id===loggingId);
   if(idx<0) return;
+  const prevStatus = clients[idx].status;
+  if (selectedLogStatus === 'waiting' && !nextCall) nextCall = defaultNextCall(2);
   if(!clients[idx].history) clients[idx].history=[];
   clients[idx].history.push({
     date:new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
@@ -2977,6 +3002,7 @@ function saveLog() {
   clients[idx].status=selectedLogStatus;
   clients[idx].nextCall=nextCall;
   clients[idx].updatedAt=new Date().toISOString();
+  if (selectedLogStatus === 'waiting' && prevStatus !== 'waiting') ensureWaitingMsgTask(idx);
   save(); closeModal('log-modal'); updateExportBadge();
   // Если купили — сразу открываем модалку абонемента
   if (selectedLogStatus === 'bought') {
