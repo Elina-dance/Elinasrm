@@ -1033,6 +1033,48 @@ function normalizePhone(p) {
   return ten.length === 10 ? '+7' + ten : String(p).trim();
 }
 
+// Число или null — никогда пустая строка вместо числа (сумма оплаты, кол-во занятий).
+function toNum(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+
+// Индексы /crm/indexes/{phones|channels}/... для мгновенного поиска клиента по
+// входящему сообщению (телефон или technical id мессенджера), без перебора всей базы.
+// Отдаёт список пар [путь_в_indexes, значение|null] — null означает "удалить этот путь".
+function contactIndexKeys(raw) {
+  // key -> contactId, key вида 'phones/+79991234567' или 'channels/telegram/123456789'
+  const out = {};
+  if (!raw || !raw.contacts) return out;
+  Object.keys(raw.contacts).forEach(cid => {
+    const c = raw.contacts[cid];
+    if (c.phone) {
+      const norm = normalizePhone(c.phone);
+      if (norm && norm.startsWith('+7')) out['phones/' + norm] = cid;
+    }
+    if (c.channels) {
+      Object.keys(c.channels).forEach(platform => {
+        const ext = c.channels[platform] && c.channels[platform].externalId;
+        if (ext) out['channels/' + platform + '/' + ext] = cid;
+      });
+    }
+  });
+  return out;
+}
+function diffIndexUpdates(clientId, oldRaw, newRaw) {
+  const updates = {};
+  const oldIdx = contactIndexKeys(oldRaw);
+  const newIdx = contactIndexKeys(newRaw);
+  Object.keys(oldIdx).forEach(key => {
+    if (newIdx[key] !== oldIdx[key]) updates['indexes/' + key] = null;
+  });
+  Object.keys(newIdx).forEach(key => {
+    if (oldIdx[key] !== newIdx[key]) updates['indexes/' + key] = { clientId: Number(clientId), contactId: newIdx[key] };
+  });
+  return updates;
+}
+
 function ageObsToSuffix(ao) {
   if (!ao) return '';
   let s = String(ao.years ?? '');
@@ -1232,7 +1274,7 @@ function flatToSchemaV2(flat) {
     if (!sid) { sid = 's' + (studentIds.length + 1); next.students[sid] = { name: '', type: 'child', contactId: null, birthDate: null, ageObservation: null, group: '' }; studentIds.push(sid); }
     const s = next.students[sid];
     s.name = ps.name || s.name;
-    if (ps.ageObservation) s.ageObservation = ps.ageObservation;
+    if (ps.ageObservation) s.ageObservation = { years: ps.ageObservation.years, months: ps.ageObservation.months != null ? ps.ageObservation.months : null, observedAt: new Date().toISOString().slice(0, 10) };
     s.group = flat.group || s.group || '';
   });
   if (flat.abBirthday) next.students[studentIds[0]].birthDate = flat.abBirthday;
@@ -1252,13 +1294,13 @@ function flatToSchemaV2(flat) {
     const subIds = Object.keys(next.subscriptions);
     const subId = subIds[0] || 'sub1';
     next.subscriptions[subId] = {
-      studentId: primaryStudentId, type: flat.abType || 'classic', amount: flat.abAmount || '',
-      lessonsTotal: flat.abLessons || '', start: flat.abStart || '', end: flat.abEnd || '',
+      studentId: primaryStudentId, type: flat.abType || 'classic', amount: toNum(flat.abAmount),
+      lessonsTotal: toNum(flat.abLessons), start: flat.abStart || '', end: flat.abEnd || '',
       notifyDate: flat.abNotifyDate || '', renewalPaid: !!flat.abRenewalPaid, days: flat.abDays || [], notes: flat.abNotes || '',
     };
   }
   next.subscriptionHistory = (flat.abHistory || []).map(h => ({
-    studentId: primaryStudentId, type: h.abType, amount: h.abAmount, lessonsTotal: h.abLessons, start: h.abStart, end: h.abEnd, days: h.abDays,
+    studentId: primaryStudentId, type: h.abType, amount: toNum(h.abAmount), lessonsTotal: toNum(h.abLessons), start: h.abStart, end: h.abEnd, days: h.abDays,
   }));
 
   delete next.__v2;
@@ -5381,8 +5423,18 @@ async function fbSave() {
     }
 
     const updates = {};
-    localDirty.forEach((c, id) => { updates['clients/' + id] = flatToSchemaV2(c) || c; });
-    localDeleted.forEach(id => { updates['clients/' + id] = null; });
+    localDirty.forEach((c, id) => {
+      const newV2 = flatToSchemaV2(c);
+      updates['clients/' + id] = newV2 || c;
+      if (newV2) Object.assign(updates, diffIndexUpdates(id, c.__v2, newV2));
+    });
+    localDeleted.forEach(id => {
+      updates['clients/' + id] = null;
+      try {
+        const oldClient = JSON.parse(_syncedSnapshot[id]);
+        if (oldClient && oldClient.__v2) Object.assign(updates, diffIndexUpdates(id, oldClient.__v2, null));
+      } catch (e) {}
+    });
     updates['archive'] = JSON.parse(localStorage.getItem('ocean_month_archive') || '{}');
     updates['savedAt'] = new Date(now).toISOString();
 
