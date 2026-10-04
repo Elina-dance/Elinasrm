@@ -853,7 +853,7 @@ async function fbSignIn(email, password){
   });
   const data = await resp.json();
   if (!resp.ok) throw new Error((data.error && data.error.message) || 'Ошибка входа');
-  saveFbAuth({ idToken: data.idToken, refreshToken: data.refreshToken, expiresAt: Date.now() + (parseInt(data.expiresIn,10)||3600)*1000 });
+  saveFbAuth({ uid: data.localId, idToken: data.idToken, refreshToken: data.refreshToken, expiresAt: Date.now() + (parseInt(data.expiresIn,10)||3600)*1000 });
 }
 
 async function fbRefreshToken(){
@@ -865,7 +865,7 @@ async function fbRefreshToken(){
     });
     const data = await resp.json();
     if (!resp.ok) { clearFbAuth(); return false; }
-    saveFbAuth({ idToken: data.id_token, refreshToken: data.refresh_token, expiresAt: Date.now() + (parseInt(data.expires_in,10)||3600)*1000 });
+    saveFbAuth({ uid: data.user_id, idToken: data.id_token, refreshToken: data.refresh_token, expiresAt: Date.now() + (parseInt(data.expires_in,10)||3600)*1000 });
     return true;
   } catch(e) { return false; }
 }
@@ -2907,10 +2907,10 @@ function saveClient() {
 
   // Проверка дублей по телефону (только при создании нового)
   if (!editingId && phone) {
-    const cleanPhone = phone.replace(/\D/g,'');
+    const cleanPhone = CRMv3.phone(phone);
     const duplicate = clients.find(c => {
       if (!c.phone) return false;
-      return c.phone.replace(/\D/g,'') === cleanPhone;
+      return cleanPhone && CRMv3.phone(c.phone) === cleanPhone;
     });
     if (duplicate) {
       // Показываем предупреждение о дубле
@@ -5296,12 +5296,7 @@ async function loadFromFirebase() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const cloud = await resp.json();
     _fbConnected = true;
-    if (!_cloudClientsToArray(cloud && cloud.clients).length) {
-      if (clients.length > 0) fbSave();
-      else setTgBar('📭', 'Нет данных', '#ffd54f', false);
-    } else {
-      if (!_applyCloudData(cloud)) fbSave();
-    }
+    _applyCloudData(cloud);
     startSSE();
     loadBotInbox(true);
     loadBonuses(true);
@@ -6101,6 +6096,680 @@ async function manualTgLoad() {
   }
 }
 
+/* CRM protocol 3: pure functions shared by the patched single-file UI/tests. */
+(function(root) {
+'use strict';
+const copy = x => x == null ? null : JSON.parse(JSON.stringify(x));
+function stable(x) {
+  if (x == null) return 'null';
+  if (Array.isArray(x)) return '[' + x.map(stable).join(',') + ']';
+  if (typeof x === 'object') return '{' + Object.keys(x).sort().map(k => JSON.stringify(k)+':'+stable(x[k])).join(',') + '}';
+  return JSON.stringify(x);
+}
+const equal = (a,b) => stable(a) === stable(b);
+const today=()=>{const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const v=Object.fromEntries(p.map(x=>[x.type,x.value]));return v.year+'-'+v.month+'-'+v.day;};
+function phone(value) {
+  const p = String(value || '').trim();
+  if (!/^\+?[0-9 ()-]+$/.test(p)) return null;
+  let d = p.replace(/\D/g, '');
+  if (!p.startsWith('+')) {
+    if (/^[78]\d{10}$/.test(d)) d = '7' + d.slice(1);
+    else if (/^\d{10}$/.test(d)) d = '7' + d;
+    else return null;
+  }
+  if (!/^[1-9]\d{7,14}$/.test(d) || (d.startsWith('7') && d.length !== 11)) return null;
+  return '+' + d;
+}
+function key(k) {
+  if (!['string','number'].includes(typeof k) || !/^[A-Za-z0-9_+:-]{1,128}$/.test(String(k))) throw Error('invalid_key');
+  return String(k);
+}
+function keys(card) {
+  const out = Object.create(null);
+  for (const [cid,c] of Object.entries(card?.contacts || {})) {
+    key(cid);
+    const p = phone(c.phone);
+    if (p) (out['phones/'+p] ||= []).push(cid);
+    for (const [ch,v] of Object.entries(c.channels || {})) {
+      if (v?.externalId == null || v.externalId === '') continue;
+      const ext = key(v.externalId);
+      if (ch === 'telegram' && !/^[1-9]\d*$/.test(ext)) throw Error('invalid_telegram_id');
+      (out['channels/'+key(ch)+'/'+ext] ||= []).push(cid);
+    }
+  }
+  return out;
+}
+function refs(node) {
+  if (node == null) return [];
+  const rows = node.clientId != null ? [node] : Object.values(node.refs || {});
+  if (node.clientId == null && (!node.refs || typeof node.refs !== 'object')) throw Error('invalid_index');
+  return rows.map(r => ({clientId:key(r.clientId), contactId:key(r.contactId)}));
+}
+function refsNode(rows) {
+  const out = Object.create(null);
+  rows.forEach(r => { const a=key(r.clientId), b=key(r.contactId); out[a.length+'_'+a+'_'+b]={clientId:a,contactId:b}; });
+  return Object.keys(out).length ? {refs:out} : null;
+}
+function threeWay(base, local, remote, path='') {
+  if (equal(local,base)) return copy(remote);
+  if (equal(remote,base) || equal(local,remote)) return copy(local);
+  const obj = x => x && typeof x === 'object' && !Array.isArray(x);
+  if (obj(base) && obj(local) && obj(remote)) {
+    const out={};
+    for (const k of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])) {
+      const v = k === 'updatedAt' ? (local[k] || remote[k]) : threeWay(base[k],local[k],remote[k],path+'/'+k);
+      if (v != null) out[k]=v;
+    }
+    return out;
+  }
+  throw Error('conflict:' + path);
+}
+function number(v) {
+  if (v == null || (typeof v==='string' && v.trim()==='')) return null;
+  const n = Number(v); if (!Number.isFinite(n)) throw Error('invalid_number');
+  return n;
+}
+function convert(flat, project, parseName) {
+  let prev=flat.__v2;
+  if (!prev) {
+    // Preserve the ENTIRE legacy card. Do not infer a fictional child/contact.
+    const legacy=copy(flat); delete legacy.__v2;
+    const parsed=parseName(flat.name || '');
+    prev={id:flat.id,schemaVersion:2,legacy,contacts:{c1:{name:'',role:'unknown'}}};
+    if (parsed.confidence==='high') {
+      const cs=parsed.contacts?.length ? parsed.contacts : parsed.contact ? [parsed.contact] : [];
+      cs.forEach((c,i)=>prev.contacts['c'+(i+1)]={name:c.name || '',role:c.role || 'unknown'});
+      if (parsed.students?.length) {
+        prev.students={};
+        parsed.students.forEach((s,i)=>{prev.students['s'+(i+1)]={name:s.name,type:'child',...(s.ageObservation ? {ageObservation:s.ageObservation}: {})};});
+      }
+    }
+  }
+  const next=copy(prev), base=flat.__v2 ? project(prev) : {};
+  if (!flat.__v2) next.displayName=flat.name || ''; 
+  const changed=k => !equal(flat[k],base[k]);
+  const crm=next.crm ||= {};
+  for (const [f,k] of Object.entries({status:'status',channel:'source',nextCall:'nextCall',notes:'notes',tasks:'tasks',msgTasks:'msgTasks'})) {
+    if (changed(f)) crm[k]=copy(flat[f]);
+  }
+  if (changed('leftDate') || changed('leftReason')) {
+    crm.exit ||= {};
+    if (changed('leftDate')) crm.exit.date=flat.leftDate || null;
+    if (changed('leftReason')) crm.exit.reason=flat.leftReason || null;
+  }
+  if (changed('history')) next.crmHistory=copy(flat.history || []);
+  next.contacts ||= {};
+  let cids=Object.keys(next.contacts);
+  if (!cids.length && (flat.phone || flat.abMom)) {next.contacts.c1={name:'',role:'unknown'}; cids=['c1'];}
+  if (changed('phone') && cids.length) next.contacts[cids[0]].phone=phone(flat.phone) || (flat.phone || null);
+  const mom=cids.find(k=>next.contacts[k].role==='mother') || cids[0];
+  if (changed('abMom') && mom) next.contacts[mom].name=flat.abMom || '';
+  next.students ||= {};
+  const sids=Object.keys(next.students); let sid=sids[0];
+  if(flat.__v2 && changed('name') && !sids.length) next.displayName=flat.name || '';
+  if (flat.__v2 && changed('name') && sids.length) {
+    const parsed=parseName(flat.name || '');
+    if (parsed.confidence!=='high' || parsed.students.length!==sids.length) throw Error('people_editor_required');
+    // Multiple people require an explicit contact/student mapping, never position guessing.
+    if (sids.length>1 || (parsed.contacts || []).length>1) throw Error('people_editor_required');
+    parsed.students.forEach((s,i)=>{
+      next.students[sids[i]].name=s.name;
+      const old=next.students[sids[i]].ageObservation;
+      if (s.ageObservation && (!old || old.years!==s.ageObservation.years || (old.months??null)!==(s.ageObservation.months??null))) {
+        next.students[sids[i]].ageObservation={...s.ageObservation,observedAt:today()};
+      }
+    });
+    const pc=parsed.contacts?.[0] || parsed.contact;
+    if (pc && mom) {
+      if (pc.role && pc.role!==next.contacts[mom].role) throw Error('people_editor_required');
+      next.contacts[mom].name=pc.name;
+    }
+  }
+  const latestSub=Object.values(next.subscriptions || {}).sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
+  let abSid=latestSub?.studentId && next.students[latestSub.studentId] ? latestSub.studentId : sid;
+  if (sid && changed('group')) next.students[sid].group=flat.group || '';
+  if (abSid) {
+    if (changed('abChild')) next.students[abSid].name=flat.abChild || '';
+    if (changed('abGroup')) next.students[abSid].group=flat.abGroup || '';
+    if (changed('abBirthday')) next.students[abSid].birthDate=flat.abBirthday || null;
+  } else if (flat.abChild || flat.abBirthday) {
+    sid=abSid='s1'; next.students.s1={name:flat.abChild || flat.name || '',type:'child',group:flat.abGroup || flat.group || ''};
+    if(flat.abBirthday)next.students.s1.birthDate=flat.abBirthday;
+  }
+  if (changed('trial')) {
+    const tid=Object.keys(next.trials || {}).sort((a,b)=>(next.trials[b].scheduledAt || '').localeCompare(next.trials[a].scheduledAt || ''))[0] || 't1';
+    if (flat.trial || next.trials?.[tid]) {
+      next.trials ||= {}; const trial=next.trials[tid] ||= {};
+      if (!trial.studentId && sid) trial.studentId=sid;
+      trial.scheduledAt=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(flat.trial || '') ? flat.trial+':00+03:00' : (flat.trial || null);
+    }
+  }
+  const fields={abRenewalSms:'renewalSms',abType:'type',abAmount:'amount',abLessons:'lessonsTotal',abStart:'start',abEnd:'end',abNotifyDate:'notifyDate',abRenewalPaid:'renewalPaid',abDays:'days',abNotes:'notes'};
+  const changedSub=Object.keys(fields).filter(changed);
+  const subId=Object.keys(next.subscriptions || {}).sort((a,b)=>(next.subscriptions[b].start || '').localeCompare(next.subscriptions[a].start || ''))[0];
+  if (changedSub.length && (subId || flat.abStart || flat.abAmount || flat.abLessons)) {
+    next.subscriptions ||= {};
+    let chosen=subId || 'sub1';
+    if(subId && (changed('abStart')||changed('abEnd')) && (flat.abHistory||[]).length>(base.abHistory||[]).length){
+      chosen='sub_'+String(flat.abStart||'new').replace(/[^A-Za-z0-9_-]/g,'_');
+      const prefix=chosen;let n=1;while(next.subscriptions[chosen])chosen=prefix+'_'+n++;
+    }
+    const sub=next.subscriptions[chosen] ||= {};
+    if(chosen!==subId)Object.keys(fields).forEach(f=>{if(!changedSub.includes(f))changedSub.push(f);});
+    if (!sub.studentId && abSid) sub.studentId=abSid;
+    changedSub.forEach(f=>sub[fields[f]]=['abAmount','abLessons'].includes(f) ? number(flat[f]) : copy(flat[f]));
+  }
+  if (changed('abHistory')) {
+    const old=Array.isArray(prev.subscriptionHistory)?prev.subscriptionHistory:Object.values(prev.subscriptionHistory || {});
+    const historyFields={abType:'type',abAmount:'amount',abLessons:'lessonsTotal',abStart:'start',abEnd:'end',abDays:'days'};
+    const projection=r=>Object.fromEntries(Object.entries(historyFields).map(([f,k])=>[f,['amount','lessonsTotal'].includes(k)?number(r[k]):k==='days'?(r[k]||[]):k==='type'?(r[k]||'classic'):(r[k]||'')]));
+    next.subscriptionHistory=(flat.abHistory || []).map(h=>{
+      const existing=[...old,...Object.values(prev.subscriptions||{})].find(r=>equal(projection(r),projection(Object.fromEntries(Object.entries(historyFields).map(([f,k])=>[k,h[f]])))));
+      if (existing) return copy(existing);
+      const r={}; Object.entries(historyFields).forEach(([f,k])=>r[k]=['amount','lessonsTotal'].includes(k) ? number(h[f]) : copy(h[f]));
+      if (abSid) r.studentId=abSid;
+      return r;
+    });
+  }
+  const known=new Set(['id','schemaVersion','__v2','name','phone','status','channel','notes','nextCall','tasks','msgTasks','leftDate','leftReason','history','group','abGroup','abChild','abMom','abBirthday','trial','abHistory','updatedAt',...Object.keys(fields)]);
+  for(const k of Object.keys(flat))if(!known.has(k)&&!k.startsWith('__')&&changed(k)){next.uiExtras ||= {};next.uiExtras[k]=copy(flat[k]);}
+  next.updatedAt=flat.updatedAt || prev.updatedAt || new Date().toISOString();
+  return next;
+}
+root.CRMv3={today,copy,stable,equal,phone,key,keys,refs,refsNode,threeWay,convert};
+if (typeof module!=='undefined') module.exports=root.CRMv3;
+})(typeof globalThis!=='undefined' ? globalThis : window);
+
+/* Structured merge. No field is discarded without an explicit conflict choice. */
+(function(C){
+'use strict';
+const blank=x=>x==null || x==='' || (Array.isArray(x)&&!x.length);
+const obj=x=>x!=null&&typeof x==='object'&&!Array.isArray(x);
+const list=x=>Array.isArray(x)?x:Object.values(x||{});
+const esc=x=>encodeURIComponent(x);
+function Conflict(path,a,b,kind='value'){return {path,left:C.copy(a),right:C.copy(b),kind};}
+function mergeValues(a,b,path,choices,conflicts){
+  if(C.equal(a,b)||blank(b))return C.copy(a);
+  if(blank(a))return C.copy(b);
+  if(obj(a)&&obj(b)){
+    const out=C.copy(a);
+    for(const k of Object.keys(b))out[k]=mergeValues(a[k],b[k],path+'/'+esc(k),choices,conflicts);
+    return out;
+  }
+  if(Array.isArray(a)&&Array.isArray(b)){
+    const out=C.copy(a);
+    for(const row of b){
+      if(out.some(x=>C.equal(x,row)))continue;
+      if(row?.id!=null&&out.some(x=>x?.id===row.id)){
+        const collision=out.findIndex(x=>x?.id===row.id);
+        out[collision]=mergeValues(out[collision],row,path+'/id='+esc(row.id),choices,conflicts);
+      }else out.push(C.copy(row));
+    }
+    return out;
+  }
+  const decision=choices[path];
+  if(decision&&C.equal(decision.left,a)&&C.equal(decision.right,b))return C.copy(decision.pick==='right'?b:a);
+  conflicts.push(Conflict(path,a,b));return C.copy(a);
+}
+function links(c){
+  const out=[];const p=C.phone(c.phone);if(p)out.push('phone:'+p);
+  for(const [ch,v]of Object.entries(c.channels||{}))if(v?.externalId)out.push(ch+':'+String(v.externalId));
+  return out;
+}
+function remap(value,maps){
+  if(Array.isArray(value))return value.map(v=>remap(v,maps));
+  if(!obj(value))return C.copy(value);
+  const out=Object.create(null);
+  for(const[k,v]of Object.entries(value)){
+    if(k==='studentId'&&maps.students?.[v])out[k]=maps.students[v];
+    else if(k==='contactId'&&maps.contacts?.[v])out[k]=maps.contacts[v];
+    else if(k==='clientId'&&String(v)===maps.sourceId)out[k]=maps.targetId;
+    else out[k]=remap(v,maps);
+  }
+  return out;
+}
+function uniqueId(rows,prefix,old){let id=prefix+'_'+old,n=1;while(Object.hasOwn(rows,id))id=prefix+'_'+old+'_'+n++;return id;}
+function mergeCards(target,source,choices={}){
+  if(!target||!source||String(target.id)===String(source.id))throw Error('invalid_merge_pair');
+  const out=C.copy(target),conflicts=[],maps={contacts:{},students:{},sourceId:String(source.id),targetId:target.id};
+  const minimal=source.integration?.origin==='bot'&&source.integration?.identityOnly===true;
+  out.contacts ||= {};
+  let anchors=0;
+  for(const [cid,original]of Object.entries(source.contacts||{})){
+    const matches=Object.entries(out.contacts).filter(([_,c])=>links(c).some(x=>links(original).includes(x)));
+    let dest;
+    if(matches.length>1){conflicts.push(Conflict('contacts/'+esc(cid),matches.map(x=>x[0]),original,'contact_mapping'));continue;}
+    if(matches.length===1){
+      dest=matches[0][0];anchors++;
+      const incoming=C.copy(original);
+      if(minimal){delete incoming.name;if(incoming.role==='unknown')delete incoming.role;}
+      out.contacts[dest]=mergeValues(out.contacts[dest],incoming,'contacts/'+esc(dest),choices,conflicts);
+    }else{
+      dest=uniqueId(out.contacts,'from'+source.id,cid);out.contacts[dest]=C.copy(original);
+    }
+    maps.contacts[cid]=dest;
+  }
+  if(!anchors)conflicts.push(Conflict('identity',target.id,source.id,'no_identity_anchor'));
+  out.students ||= {};
+  for(const [sid,student]of Object.entries(source.students||{})){
+    const row=remap(student,maps);
+    // Same local s1 key is NOT identity. Only identical data or DOB + same name.
+    const candidates=Object.entries(out.students).filter(([_,s])=>C.equal(s,row)||(row.birthDate&&s.birthDate===row.birthDate&&row.name&&s.name===row.name));
+    let dest;
+    if(candidates.length===1){dest=candidates[0][0];out.students[dest]=mergeValues(out.students[dest],row,'students/'+esc(dest),choices,conflicts);}
+    else{dest=uniqueId(out.students,'from'+source.id,sid);out.students[dest]=row;}
+    maps.students[sid]=dest;
+  }
+  for(const section of ['trials','subscriptions']){
+    if(!source[section])continue;
+    out[section] ||= {};
+    for(const [id,record]of Object.entries(source[section])){
+      const row=remap(record,maps);
+      if(Object.values(out[section]).some(x=>C.equal(x,row)))continue;
+      out[section][uniqueId(out[section],'from'+source.id,id)]=row;
+    }
+  }
+  const handled=new Set(['id','schemaVersion','contacts','students','trials','subscriptions','createdAt','updatedAt','crmHistory','subscriptionHistory','integration']);
+  for(const name of ['crmHistory','subscriptionHistory']){
+    if(!source[name])continue;
+    const records=remap(list(source[name]),maps);
+    out[name]=mergeValues(list(out[name]),records,name,choices,conflicts);
+  }
+  for(const[k,v]of Object.entries(source)){
+    if(handled.has(k))continue;
+    const row=remap(v,maps);
+    if(k==='crm'&&minimal){if(row?.status==='new')delete row.status;if(row?.source==='telegram')delete row.source;}
+    out[k]=mergeValues(out[k],row,k,choices,conflicts);
+  }
+  // Preserve integration metadata of both cards without overwriting its origin.
+  if(source.integration){out.integration ||= {};out.integration.mergedSources ||= {};out.integration.mergedSources[String(source.id)]=C.copy(source.integration);}
+  if(source.createdAt&&(!out.createdAt||source.createdAt<out.createdAt))out.createdAt=source.createdAt;
+  out.schemaVersion=2;
+  return {card:out,conflicts,maps};
+}
+function threeWay(base,local,remote,path='',choices={},conflicts=[]){
+  if(C.equal(local,base))return C.copy(remote);
+  if(C.equal(remote,base)||C.equal(local,remote))return C.copy(local);
+  if(obj(base)&&obj(local)&&obj(remote)){
+    const out=Object.create(null);
+    for(const k of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){
+      const value=k==='updatedAt'?(local[k]||remote[k]):threeWay(base[k],local[k],remote[k],path+'/'+esc(k),choices,conflicts);
+      if(value!=null)out[k]=value;
+    }
+    return out;
+  }
+  // Independent appends preserve both histories. Edits/deletes need a choice.
+  if(Array.isArray(base)&&Array.isArray(local)&&Array.isArray(remote)&&local.length>=base.length&&remote.length>=base.length&&base.every((v,i)=>C.equal(v,local[i])&&C.equal(v,remote[i]))){
+    return mergeValues(remote,local.slice(base.length),path,choices,conflicts);
+  }
+  const d=choices[path];
+  if(d&&C.equal(d.left,local)&&C.equal(d.right,remote))return C.copy(d.pick==='right'?remote:local);
+  conflicts.push(Conflict(path,local,remote,'concurrent'));return C.copy(local);
+}
+Object.assign(C,{mergeCards,threeWayResolved:threeWay,mergeValues,list});
+})(CRMv3);
+
+/* Compatible UI writer for protocol 3. All database writes still use Firebase auth. */
+let _v3Saving=false,_v3Flight=null,_v3Again=false,_v3CloudLoaded=false,_v3ArchiveBase={},_v3Deferred=null,_v3Auto=false;
+const _v3Project=schemaV2ToFlat;
+const _v3Tab=sessionStorage.getItem('ocean_crm_tab')||crypto.randomUUID();
+sessionStorage.setItem('ocean_crm_tab',_v3Tab);
+function _v3Uid(){try{return FB_AUTH?.uid||JSON.parse(atob(FB_AUTH.idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub;}catch(_){return null;}}
+function _v3DraftKey(){const uid=_v3Uid();return uid?'ocean_crm_draft3_'+uid+'_'+_v3Tab:null;}
+function _v3Validate(value){
+  if(value&&typeof value==='object')for(const[k,v]of Object.entries(value)){if(['__proto__','constructor','prototype'].includes(k))throw Error('unsupported_field_name');_v3Validate(v);}
+}
+schemaV2ToFlat=raw=>{
+  _v3Validate(raw);
+  const normalized={...raw,subscriptionHistory:CRMv3.list(raw.subscriptionHistory),crmHistory:CRMv3.list(raw.crmHistory)};
+  const f=_v3Project(normalized);f.__v2=raw;
+  for(const[k,v]of Object.entries(raw.uiExtras||{}))if(!['id','schemaVersion','__v2'].includes(k))f[k]=CRMv3.copy(v);
+  if(!Object.keys(raw.students||{}).length)f.name=raw.displayName||raw.legacy?.name||f.name;
+  const sub=Object.values(raw.subscriptions||{}).sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
+  const subStudent=raw.students?.[sub?.studentId];if(subStudent){f.abChild=subStudent.name||'';f.abGroup=subStudent.group||'';f.abBirthday=subStudent.birthDate;}
+  f.abRenewalSms=sub?.renewalSms||raw.uiExtras?.abRenewalSms||raw.legacy?.abRenewalSms||'';
+  return CRMv3.copy(f);
+};
+normalizePhone=p=>CRMv3.phone(p)||String(p||'').trim();
+flatToSchemaV2=f=>{_v3Validate(f);return CRMv3.convert(f,schemaV2ToFlat,parseNameToPeople);};
+getNextId=()=>Date.now()*1000+crypto.getRandomValues(new Uint32Array(1))[0]%1000;
+function _v3Archive(){return JSON.parse(localStorage.getItem('ocean_month_archive')||'{}');}
+function _v3Changes(){
+  const rows=[];const current=new Map(clients.map(c=>[String(c.id),c]));
+  for(const id of new Set([...Object.keys(_syncedSnapshot),...current.keys()])){
+    const before=_syncedSnapshot[id]?JSON.parse(_syncedSnapshot[id]):null,local=current.get(id)||null;
+    if(!CRMv3.equal(before,local))rows.push({id,base:before,local:CRMv3.copy(local)});
+  }
+  return rows;
+}
+function _v3Dirty(){return _v3Changes().length>0||!CRMv3.equal(_v3Archive(),_v3ArchiveBase);}
+function _v3Persist(){
+  if(!_v3CloudLoaded)return;
+  const k=_v3DraftKey();if(!k)return;
+  const rows=_v3Changes(),archive=_v3Archive();
+  if(!rows.length&&CRMv3.equal(archive,_v3ArchiveBase)){localStorage.removeItem(k);return;}
+  localStorage.setItem(k,JSON.stringify({version:3,rows,archive,archiveBase:_v3ArchiveBase}));
+}
+function _v3Recover(){
+  const k=_v3DraftKey();if(!k)return;
+  let draft;try{draft=JSON.parse(localStorage.getItem(k)||'null');}catch(_){return;}
+  if(draft?.version!==3)return;
+  const map=new Map(clients.map(c=>[String(c.id),c]));
+  for(const row of draft.rows||[]){
+    if(row.base)_syncedSnapshot[row.id]=JSON.stringify(row.base);else delete _syncedSnapshot[row.id];
+    if(row.local)map.set(row.id,row.local);else map.delete(row.id);
+  }
+  clients=[...map.values()];_v3ArchiveBase=draft.archiveBase||{};
+  localStorage.setItem('ocean_month_archive',JSON.stringify(draft.archive||{}));
+  setTgBar('📝','Есть несохранённые изменения — нажмите «Повторить»','#ffd54f',true);
+}
+const _v3Save=save;
+save=()=>{_v3Save();if(_v3CloudLoaded){try{_v3Persist();}catch(_){showToast('Не удалось сохранить черновик на устройстве. Не закрывайте вкладку.');}}};
+const _v3SaveArchive=saveMonthArchive;
+saveMonthArchive=(key,data)=>{_v3SaveArchive(key,data);if(_v3CloudLoaded){_v3Persist();scheduleTgSave();}};
+function _v3ModalOpen(){return !!document.querySelector('.modal-overlay.open, #crm-conflict-dialog, #crm-people-dialog');}
+_applyCloudData=cloud=>{
+  if(!cloud||typeof cloud!=='object')cloud={};
+  if(_v3Saving||(_v3CloudLoaded&&(_v3Dirty()||_v3ModalOpen()))){_v3Deferred=cloud;return false;}
+  const initial=!_v3CloudLoaded;
+  clients=_cloudClientsToArray(cloud.clients);_refreshSyncedSnapshot();
+  _v3ArchiveBase=CRMv3.copy(cloud.archive||{});
+  localStorage.setItem('ocean_month_archive',JSON.stringify(_v3ArchiveBase));
+  _v3CloudLoaded=true;_v3Deferred=null;
+  if(initial)_v3Recover();
+  localStorage.setItem('ocean_crm_v3',JSON.stringify(clients));
+  renderTabs();renderCurrentTab();
+  if(!_v3Dirty())setTgBar('✅',cloud._sync?.protocol===3?'Данные обновлены':'Чтение доступно · сохранение ещё не включено','#a5d6a7',false);
+  if(cloud._sync?.protocol===3)setTimeout(()=>autoDedup(true),0);
+  return true;
+};
+const _v3Close=closeModal;
+closeModal=id=>{_v3Close(id);setTimeout(()=>{if(_v3Deferred&&!_v3Dirty()&&!_v3ModalOpen()){_v3Deferred=null;_fbRefetchAndApply();}},0);};
+async function _v3Get(path){
+  const url=FB_URL.replace(/\/crm\.json$/,'/crm/'+path.split('/').map(encodeURIComponent).join('/')+'.json');
+  const r=await fetch(url);if(!r.ok)throw Error('HTTP_'+r.status);
+  const value=await r.json();_v3Validate(value);return value;
+}
+async function _v3State(){const s=await _v3Get('_sync');if(s?.protocol!==3||!Number.isSafeInteger(s.revision)||s.revision<1)throw Error('protocol_not_installed');return s;}
+async function _v3Indexes(replacements,oldCards,patch){
+  const touched=new Set();
+  for(const[id,card]of Object.entries(replacements)){
+    patch['clients/'+id]=card;
+    [...Object.keys(CRMv3.keys(oldCards[id])),...Object.keys(CRMv3.keys(card))].forEach(k=>touched.add(k));
+  }
+  for(const k of touched){
+    let rows=CRMv3.refs(await _v3Get('indexes/'+k)).filter(r=>!Object.hasOwn(replacements,r.clientId));
+    for(const[id,card]of Object.entries(replacements))for(const cid of(CRMv3.keys(card)[k]||[]))rows.push({clientId:id,contactId:cid});
+    patch['indexes/'+k]=CRMv3.refsNode(rows);
+  }
+}
+async function _v3Write(patch,state,op){
+  patch._sync={protocol:3,revision:state.revision+1};patch.savedAt=new Date().toISOString();
+  patch['_ops/'+op]={source:'crm_ui',revision:state.revision+1,createdAt:{'.sv':'timestamp'}};
+  let r;
+  try{r=await fetch(FB_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});}
+  catch(_){if(await _v3Get('_ops/'+op))return true;throw Error('write_not_confirmed');}
+  if(r.ok)return true;
+  if(await _v3Get('_ops/'+op))return true;
+  if((r.status===401||r.status===403)&&(await _v3State()).revision!==state.revision)return false;
+  throw Error('HTTP_'+r.status);
+}
+const _v3Labels={name:'Имя',phone:'Телефон',role:'Роль контакта',status:'Статус',notes:'Примечание',nextCall:'Следующий звонок',years:'Возраст, лет',months:'Возраст, месяцев',observedAt:'Дата наблюдения',birthDate:'Дата рождения',group:'Группа',source:'Источник',externalId:'Идентификатор мессенджера',username:'Имя в мессенджере',crmHistory:'История',subscriptionHistory:'История абонементов'};
+function _v3Value(x){if(x==null)return 'Удалено / не заполнено';return typeof x==='object'?JSON.stringify(x,null,2):String(x);}
+function _v3Ask(conflicts){
+  return new Promise(resolve=>{
+    const overlay=document.createElement('div');overlay.id='crm-conflict-dialog';overlay.style.cssText='position:fixed;inset:0;z-index:100001;background:#1239;display:flex;align-items:center;justify-content:center;padding:16px';
+    const box=document.createElement('div');box.style.cssText='background:white;color:#17334b;border-radius:16px;padding:22px;max-width:850px;max-height:88vh;overflow:auto;width:100%';overlay.append(box);
+    const title=document.createElement('h3');title.textContent='Нужно сверить изменения';box.append(title);
+    const caption=document.createElement('p');caption.textContent='Выберите значение только для полей, которые отличаются. Остальные данные сохранятся.';box.append(caption);
+    const choices={};let unsupported=false;
+    conflicts.forEach((c,i)=>{
+      const row=document.createElement('div');row.style.cssText='border-top:1px solid #ddd;padding:12px 0';
+      const label=document.createElement('strong');const leaf=decodeURIComponent(c.path.split('/').at(-1));const parts=c.path.split('/').map(decodeURIComponent);const place=parts[0]==='clients'?' · карточка №'+parts[1]:parts.includes('contacts')?' · контакт':parts.includes('students')?' · ученик':'';label.textContent=(_v3Labels[leaf]||leaf||'Карточка')+place;row.append(label);
+      if(['contact_mapping','no_identity_anchor'].includes(c.kind)){unsupported=true;const p=document.createElement('p');p.textContent='Не удалось однозначно сопоставить контакты. Проверьте их телефоны и идентификаторы в карточках.';row.append(p);}
+      else for(const[pick,value,heading]of[['left',c.left,'Значение в этой карточке / ваши изменения'],['right',c.right,'Другая карточка / сохранённые изменения']]){
+        const lab=document.createElement('label');lab.style.cssText='display:block;margin:9px 0;padding:10px;border:1px solid #ddd;border-radius:8px';
+        const radio=document.createElement('input');radio.type='radio';radio.name='crm_choice_'+i;radio.onchange=()=>{choices[c.path]={pick,left:c.left,right:c.right};};lab.append(radio,document.createTextNode(' '+heading));
+        const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:6px 0';pre.textContent=_v3Value(value);lab.append(pre);row.append(lab);
+      }
+      box.append(row);
+    });
+    const cancel=document.createElement('button');cancel.textContent='Пока не сохранять';cancel.className='btn';cancel.onclick=()=>{overlay.remove();resolve(null);};box.append(cancel);
+    if(!unsupported){const ok=document.createElement('button');ok.textContent='Сохранить выбранное';ok.className='btn btn-primary';ok.style.marginLeft='12px';ok.onclick=()=>{if(conflicts.some(c=>!choices[c.path])){showToast('Выберите значение для каждого поля');return;}overlay.remove();resolve(choices);};box.append(ok);}
+    document.body.append(overlay);
+  });
+}
+function _v3Error(e){
+  const map={protocol_not_installed:'Сохранение ещё не включено. Нужна настройка совместимого доступа.',people_editor_required:'Откройте «Контакты и ученики»: здесь нужно указать, чьи данные меняются.',write_not_confirmed:'Ответ на сохранение не получен. Черновик сохранён; нажмите «Повторить».',cancelled:'Изменения оставлены в черновике.',card_was_merged_reload_required:'Карточка уже объединена. Ваш черновик сохранён: перенесите нужную правку в основную карточку.',new_id_already_exists:'Такой номер карточки уже занят. Черновик сохранён; нужен новый номер.',busy:'Сейчас идёт сохранение. Повторите действие через несколько секунд.'};
+  setTgBar('⚠️',map[e.message]||'Не удалось сохранить. Черновик оставлен на устройстве.','#ff8a80',true);
+  showToast(map[e.message]||'Сохранение не подтверждено');
+}
+async function _v3SaveOnce(){
+  if(!_v3CloudLoaded)throw Error('protocol_not_installed');
+  const rows=_v3Changes(),archive=_v3Archive(),archiveBase=CRMv3.copy(_v3ArchiveBase);
+  if(!rows.length&&CRMv3.equal(archive,archiveBase))return true;
+  const local=Object.create(null);for(const row of rows)local[row.id]=row.local?flatToSchemaV2(row.local):null;
+  const op='ui_'+crypto.randomUUID().replaceAll('-','');let choices={};
+  for(let attempt=0;attempt<6;attempt++){
+    const state=await _v3State(),patch={},replacements=Object.create(null),oldCards=Object.create(null),conflicts=[];
+    for(const row of rows){
+      const id=CRMv3.key(row.id),remote=await _v3Get('clients/'+id);
+      if(!row.base&&(remote||await _v3Get('aliases/'+id)))throw Error('new_id_already_exists');
+      replacements[id]=CRMv3.threeWayResolved(row.base?(row.base.__v2||row.base):null,local[id],remote,'clients/'+id,choices,conflicts);oldCards[id]=remote;
+      if(!remote&&row.base&&replacements[id]){const alias=await _v3Get('aliases/'+id);if(alias)throw Error('card_was_merged_reload_required');}
+    }
+    const changedArchive=!CRMv3.equal(archive,archiveBase);
+    let mergedArchive;
+    if(changedArchive)mergedArchive=CRMv3.threeWayResolved(archiveBase,archive,(await _v3Get('archive'))||{},'archive',choices,conflicts);
+    if(conflicts.length){const selected=await _v3Ask(conflicts);if(!selected)throw Error('cancelled');Object.assign(choices,selected);continue;}
+    await _v3Indexes(replacements,oldCards,patch);if(changedArchive)patch.archive=mergedArchive;
+    if(!await _v3Write(patch,state,op))continue;
+    for(const row of rows){
+      const id=row.id,raw=replacements[id],idx=clients.findIndex(c=>String(c.id)===id);
+      if(raw==null){delete _syncedSnapshot[id];if(idx>=0&&CRMv3.equal(clients[idx],row.local))clients.splice(idx,1);continue;}
+      const synced=schemaV2ToFlat(raw);_syncedSnapshot[id]=JSON.stringify(synced);
+      if(idx>=0&&CRMv3.equal(clients[idx],row.local))clients[idx]=synced;
+      else if(idx>=0){const edits={};for(const k of new Set([...Object.keys(row.local||{}),...Object.keys(clients[idx])]))if(k!=='__v2'&&!CRMv3.equal(row.local?.[k],clients[idx][k]))edits[k]=clients[idx][k];clients[idx]={...synced,...edits,__v2:raw};}
+      else if(row.local===null){clients.push(synced);} // deletion conflict resolved in favour of the server
+    }
+    if(changedArchive){_v3ArchiveBase=mergedArchive;if(CRMv3.equal(_v3Archive(),archive))localStorage.setItem('ocean_month_archive',JSON.stringify(mergedArchive));}
+    _v3Persist();localStorage.setItem('ocean_crm_v3',JSON.stringify(clients));renderTabs();renderCurrentTab();setTgBar('✅','Сохранено','#a5d6a7',false);
+    return true;
+  }
+  throw Error('concurrent_update_retry_exhausted');
+}
+fbSave=async()=>{
+  if(_v3Saving&&!_v3Flight){_v3Again=true;return false;}
+  if(_v3Flight){_v3Again=true;return _v3Flight;}
+  _v3Saving=true;
+  _v3Flight=(async()=>{try{_v3Persist();return await _v3SaveOnce();}catch(e){_v3Error(e);return false;}finally{_v3Saving=false;_v3Flight=null;}})();
+  const ok=await _v3Flight;
+  if(ok&&_v3Deferred&&!_v3Dirty()&&!_v3ModalOpen()){_v3Deferred=null;_fbRefetchAndApply();}
+  if(ok&&(_v3Again||_v3Dirty())){_v3Again=false;scheduleTgSave();}
+  return ok;
+};
+manualTgLoad=async()=>{try{if(_v3Dirty()||_v3Saving){await fbSave();return;}const r=await fetch(FB_URL);if(!r.ok)throw Error('HTTP_'+r.status);_applyCloudData(await r.json());}catch(e){_v3Error(e);}};
+retrySyncNow=manualTgLoad;
+window.addEventListener('beforeunload',e=>{if(_v3CloudLoaded&&(_v3Dirty()||_v3Saving)){_v3Persist();e.preventDefault();e.returnValue='';}});
+async function _v3Merge(targetId,sourceId,{interactive=true,status=null}={}){
+  if(_v3Saving)return false;
+  if(_v3Dirty()&&!await fbSave())return false;
+  _v3Saving=true;
+  const veil=document.createElement('div');veil.style.cssText='position:fixed;inset:0;z-index:100000;background:#ffffffaa;display:flex;align-items:center;justify-content:center;font-weight:bold';veil.textContent='Сохраняем объединение…';document.body.append(veil);
+  const op='merge_'+crypto.randomUUID().replaceAll('-','');let choices={};
+  try{
+    for(let attempt=0;attempt<6;attempt++){
+      const state=await _v3State(),target=await _v3Get('clients/'+targetId),source=await _v3Get('clients/'+sourceId);
+      if(!source){const alias=await _v3Get('aliases/'+sourceId);if(String(alias?.clientId)===String(targetId)){await _v3ReloadAfterMerge();return true;}throw Error('card_was_merged_reload_required');}
+      if(!target)throw Error('card_was_merged_reload_required');
+      if(!interactive){
+        for(const k of new Set([...Object.keys(CRMv3.keys(target)),...Object.keys(CRMv3.keys(source))])){
+          if(CRMv3.refs(await _v3Get('indexes/'+k)).some(r=>![String(targetId),String(sourceId)].includes(r.clientId)))return false;
+        }
+      }
+      const merged=CRMv3.mergeCards(target,source,choices);
+      if(status){merged.card.crm ||= {};merged.card.crm.status=status;merged.conflicts=merged.conflicts.filter(c=>c.path!=='crm/status');}
+      if(merged.conflicts.length){
+        if(!interactive)return false;
+        const selected=await _v3Ask(merged.conflicts);if(!selected)return false;Object.assign(choices,selected);continue;
+      }
+      const now=new Date().toISOString();merged.card.updatedAt=now;
+      const replacements={[targetId]:merged.card,[sourceId]:null},patch={};
+      await _v3Indexes(replacements,{[targetId]:target,[sourceId]:source},patch);
+      patch['aliases/'+sourceId]={clientId:String(targetId),contactMap:merged.maps.contacts,studentMap:merged.maps.students,mergedAt:now};
+      patch['mergeArchive/'+sourceId]={source,targetBefore:target,mergedInto:String(targetId),mergedAt:now};
+      if(!await _v3Write(patch,state,op))continue;
+      // The overlay prevents edits to the cards while their identity changes.
+      clients=clients.filter(c=>String(c.id)!==String(sourceId));delete _syncedSnapshot[String(sourceId)];
+      const flat=schemaV2ToFlat(merged.card),idx=clients.findIndex(c=>String(c.id)===String(targetId));
+      if(idx>=0)clients[idx]=flat;else clients.push(flat);
+      _syncedSnapshot[String(targetId)]=JSON.stringify(flat);_v3Persist();
+      localStorage.setItem('ocean_crm_v3',JSON.stringify(clients));renderTabs();renderCurrentTab();
+      showToast('Карточки объединены. Контакты, ученики и история сохранены.');return true;
+    }
+    throw Error('concurrent_update_retry_exhausted');
+  }catch(e){_v3Error(e);return false;}
+  finally{veil.remove();_v3Saving=false;if(_v3Dirty())scheduleTgSave();}
+}
+async function _v3ReloadAfterMerge(){const r=await fetch(FB_URL);if(!r.ok)throw Error('reload_failed');const cloud=await r.json();clients=_cloudClientsToArray(cloud?.clients);_refreshSyncedSnapshot();_v3Persist();renderTabs();renderCurrentTab();}
+function _v3Pairs(){
+  const groups=new Map();
+  for(const c of clients){const raw=flatToSchemaV2(c);for(const k of Object.keys(CRMv3.keys(raw))){if(!groups.has(k))groups.set(k,new Map());groups.get(k).set(String(c.id),c);}}
+  const pairs=[],seen=new Set();
+  for(const group of groups.values()){
+    const rows=[...group.values()].sort((a,b)=>Number(a.id)-Number(b.id));
+    for(let i=1;i<rows.length;i++){const pair=[rows[0],rows[i]],id=pair.map(c=>c.id).join(':');if(!seen.has(id)){seen.add(id);pairs.push(pair);}}
+  }
+  return pairs;
+}
+const _v3AutoSeen=new Set();
+autoDedup=async(silent)=>{
+  if(!_v3CloudLoaded||_v3Saving||_v3Auto||_v3Dirty()||_v3ModalOpen())return 0;
+  _v3Auto=true;let merged=0;
+  try{
+    for(const pair of _v3Pairs()){
+      const signature=CRMv3.stable(pair.map(c=>c.__v2||c));if(_v3AutoSeen.has(signature))continue;
+      _v3AutoSeen.add(signature);
+      const preview=CRMv3.mergeCards(flatToSchemaV2(pair[0]),flatToSchemaV2(pair[1]));
+      if(preview.conflicts.length)continue;
+      if(await _v3Merge(pair[0].id,pair[1].id,{interactive:false}))merged++;
+      if(merged>=5)break;
+    }
+    if(!silent&&!merged)showToast('Для оставшихся совпадений нужна сверка полей.');
+  }catch(e){if(!silent)_v3Error(e);}finally{_v3Auto=false;const b=document.querySelector('[onclick="findDuplicates()"]');if(b){const count=_v3Pairs().length;b.textContent=count?'Дубли ('+count+')':'Дубли';b.title=count?'Есть совпадения, которые требуют сверки':'Поиск совпадений';}}
+  return merged;
+};
+findDuplicates=async()=>{
+  if(_v3Dirty()&&!await fbSave())return;
+  mergePairs=_v3Pairs();currentMergeIdx=0;
+  if(!mergePairs.length){showToast('Совпадений не найдено');return;}showMergeModal();
+};
+showMergeModal=()=>{
+  if(currentMergeIdx>=mergePairs.length){closeModal('merge-modal');renderCurrentTab();return;}
+  const pair=mergePairs[currentMergeIdx];selectedMergeStatus=pair[0].status;
+  document.getElementById('merge-counter').textContent=(currentMergeIdx+1)+' из '+mergePairs.length;
+  const content=document.getElementById('merge-content');content.replaceChildren();
+  for(const c of pair){const p=document.createElement('p');p.textContent='№'+c.id+' · '+c.name+' · '+(c.phone||'')+' · '+(STATUS_MAP[c.status]?.label||c.status);content.append(p);}
+  renderStatusGrid('merge-status-grid',selectedMergeStatus,'selectMergeStatus');document.getElementById('merge-modal').classList.add('open');
+};
+confirmMerge=async()=>{
+  const pair=mergePairs[currentMergeIdx];if(!pair)return;
+  if(await _v3Merge(pair[0].id,pair[1].id,{status:selectedMergeStatus})){mergePairs=_v3Pairs();currentMergeIdx=0;showMergeModal();}
+};
+dupMerge=async()=>{
+  const targetId=window._dupExistingId,d=window._dupNewData;
+  const source={id:getNextId(),...CRMv3.copy(d),history:[]};
+  clients.push(source);save();closeModal('duplicate-modal');closeModal('edit-modal');
+  if(await fbSave())await _v3Merge(targetId,source.id);
+};
+const _v3DuplicateWarning=showDuplicateWarning;
+showDuplicateWarning=(existing,data)=>{
+  const source={id:getNextId(),...CRMv3.copy(data),history:[]};
+  const preview=CRMv3.mergeCards(flatToSchemaV2(existing),flatToSchemaV2(source));
+  if(preview.conflicts.length){_v3DuplicateWarning(existing,data);return;}
+  clients.push(source);save();closeModal('edit-modal');
+  fbSave().then(ok=>{if(ok)_v3Merge(existing.id,source.id,{interactive:false});});
+};
+// Supplementary editor for family cards; original forms remain available.
+function _v3People(){
+  const client=clients.find(c=>c.id===editingId);if(!client)return;
+  let raw;try{raw=flatToSchemaV2({...client,name:client.__v2?schemaV2ToFlat(client.__v2).name:client.name,phone:document.getElementById('f-phone').value.trim(),group:document.getElementById('f-group').value});}catch(e){_v3Error(e);return;}const fields=[];
+  const overlay=document.createElement('div');overlay.id='crm-people-dialog';overlay.style.cssText='position:fixed;inset:0;z-index:100002;background:#1239;display:flex;align-items:center;justify-content:center;padding:16px';
+  const box=document.createElement('div');box.style.cssText='background:white;color:#17334b;max-width:720px;width:100%;max-height:85vh;overflow:auto;padding:24px;border-radius:16px';overlay.append(box);
+  const title=document.createElement('h3');title.textContent='Контакты и ученики';box.append(title);
+  function field(row,key,label,type='text'){
+    const wrap=document.createElement('label');wrap.style.cssText='display:block;margin:8px 0';wrap.append(document.createTextNode(label));
+    const input=document.createElement(type==='role'?'select':'input');if(type==='role'){for(const [value,text] of Object.entries({mother:'Мама',father:'Папа',grandmother:'Бабушка',grandfather:'Дедушка',aunt:'Тётя',uncle:'Дядя',self:'Сам ученик',other:'Другой контакт'})){const option=document.createElement('option');option.value=value;option.textContent=text;input.append(option);}if(row[key]&&!Array.from(input.options).some(o=>o.value===row[key]))input.add(new Option(row[key],row[key]));}else input.type=type;input.value=row[key]??'';input.style.cssText='display:block;width:100%;box-sizing:border-box;padding:8px;border:1px solid #bbb;border-radius:6px';wrap.append(input);box.append(wrap);fields.push({row,key,input,type,original:input.value});
+  }
+  for(const[id,c]of Object.entries(raw.contacts||{})){
+    const h=document.createElement('h4');h.textContent='Контакт: '+(c.name||id);box.append(h);
+    field(c,'name','Имя');field(c,'phone','Телефон или @username');field(c,'role','Кем приходится ученику','role');
+    c.channels ||= {};c.channels.telegram ||= {};field(c.channels.telegram,'username','Telegram username');field(c.channels.telegram,'externalId','Числовой Telegram ID');
+  }
+  for(const[id,s]of Object.entries(raw.students||{})){
+    const h=document.createElement('h4');h.textContent='Ученик: '+(s.name||id);box.append(h);
+    field(s,'name','Имя');field(s,'group','Группа');field(s,'birthDate','Дата рождения','date');
+    s.ageObservation ||= {};field(s.ageObservation,'years','Возраст: лет','number');field(s.ageObservation,'months','Возраст: месяцев','number');field(s.ageObservation,'observedAt','На какую дату известен возраст','date');
+  }
+  const cancel=document.createElement('button');cancel.textContent='Отмена';cancel.className='btn';cancel.onclick=()=>overlay.remove();box.append(cancel);
+  const submit=document.createElement('button');submit.textContent='Сохранить';submit.className='btn btn-primary';submit.style.marginLeft='12px';submit.onclick=()=>{
+    for(const f of fields){if(f.input.value===f.original)continue;let v=f.input.value.trim();if(f.type==='number'&&v!==''){v=Number(v);if(!Number.isInteger(v)||v<0||(f.key==='months'&&v>11)){showToast('Проверьте возраст');return;}}if(f.key==='externalId'&&v&&!/^[1-9]\d*$/.test(v)){showToast('Telegram ID должен состоять из цифр');return;}}
+    const changedAges=new Set(),datedAges=new Set();
+    for(const f of fields){if(f.input.value===f.original)continue;let v=f.input.value.trim();f.row[f.key]=v===''?null:f.type==='number'?Number(v):v;if(['years','months'].includes(f.key))changedAges.add(f.row);if(f.key==='observedAt'){datedAges.add(f.row);delete f.row.observedAtAssumed;}}
+    for(const age of changedAges){if(!datedAges.has(age))age.observedAt=CRMv3.today();delete age.observedAtAssumed;}
+    raw.updatedAt=new Date().toISOString();const idx=clients.findIndex(c=>c.id===client.id);clients[idx]=schemaV2ToFlat(raw);for(const [field,key] of [['f-name','name'],['f-phone','phone'],['f-group','group']])document.getElementById(field).value=clients[idx][key]||'';overlay.remove();saveClient();
+  };box.append(submit);document.body.append(overlay);
+}
+const _v3Edit=openEditModal;
+openEditModal=id=>{_v3Edit(id);const host=document.querySelector('#edit-modal .modal-inner');if(host&&!document.getElementById('crm-people-button')){const b=document.createElement('button');b.id='crm-people-button';b.type='button';b.className='btn';b.textContent='Контакты и ученики';b.style.marginBottom='12px';b.onclick=_v3People;host.prepend(b);}};
+// Imports use the same writer; an existing ID is never silently overwritten.
+previewImport=()=>{
+  try{
+    const text=document.getElementById('import-data').value.trim();if(!text){showToast('Нет данных для импорта');return;}
+    let rows;
+    if(document.getElementById('import-format').value==='json'){rows=JSON.parse(text);if(!Array.isArray(rows))throw Error('Ожидается JSON-массив карточек');}
+    else rows=text.split('\n').filter(x=>x.trim()).map(line=>{const [name,phone='',group='',channel='',status='new',notes='']=line.split(';').map(x=>x.trim());return {name,phone,group,channel,status,notes};});
+    const used=new Set(clients.map(c=>String(c.id))),pending=[];let skipped=0;
+    for(let row of rows){
+      _v3Validate(row);if(!row||typeof row!=='object'||Array.isArray(row))throw Error('Некорректная карточка');
+      if(row.id!=null&&used.has(String(row.id))){skipped++;continue;}
+      row=CRMv3.copy(row);
+      if(row.id==null){do{row.id=getNextId();}while(used.has(String(row.id)));}
+      if(!Number.isSafeInteger(Number(row.id))||Number(row.id)<1)throw Error('В импортируемой карточке нужен положительный числовой ID');
+      row.id=Number(row.id);used.add(String(row.id));
+      const flat=row.schemaVersion===2?schemaV2ToFlat(row):row;flat.history ||= [];flat.nextCall ||= '';flat.trial ||= '';
+      flatToSchemaV2(flat);pending.push(flat);
+    }
+    const host=document.getElementById('import-preview');host.replaceChildren();host.style.display='block';
+    const p=document.createElement('p');p.textContent='Будет добавлено: '+pending.length+'. Пропущено из-за уже существующего ID: '+skipped+'. Совпадения по телефону будут проверены после сохранения.';host.append(p);
+    for(const row of pending){const item=document.createElement('div');item.textContent=(row.name||'Без имени')+(row.phone?' · '+row.phone:'');host.append(item);}
+    window._importPending=pending;document.getElementById('confirm-import-btn').style.display=pending.length?'block':'none';
+  }catch(e){window._importPending=[];document.getElementById('confirm-import-btn').style.display='none';showToast('Импорт не подготовлен: '+e.message);}
+};
+confirmImport=async()=>{
+  const rows=window._importPending||[];if(!rows.length)return;
+  if(rows.some(r=>clients.some(c=>String(c.id)===String(r.id)))){showToast('Данные изменились. Повторите предпросмотр импорта.');return;}
+  clients.unshift(...rows);window._importPending=[];save();closeModal('import-modal');renderCurrentTab();
+  if(await fbSave()){showToast('Импорт сохранён');await autoDedup(true);}
+};
+importBotLead=async key=>{
+  const lead=botInbox.find(x=>x.key===key);if(!lead)return;
+  if(!clients.some(c=>c.__v2?.integration?.legacyInboxKey===key)){
+    const flat={id:getNextId(),name:(lead.child_name||'Ребёнок')+(lead.child_age?' '+lead.child_age+' г.':'')+(lead.parent_name?' — '+lead.parent_name:''),phone:lead.phone||'',group:lead.group||'',channel:'Telegram-бот',status:'new',notes:lead.notes||'',history:[]};
+    const raw=flatToSchemaV2(flat);raw.integration={legacyInboxKey:key};clients.unshift(schemaV2ToFlat(raw));save();
+  }
+  if(!await fbSave())return;
+  try{const r=await fetch(INBOX_URL.replace('.json','/'+encodeURIComponent(key)+'.json'),{method:'DELETE'});if(!r.ok)throw Error();botInbox=botInbox.filter(x=>x.key!==key);showToast('Заявка сохранена в CRM');renderCurrentTab();}
+  catch(_){showToast('Карточка сохранена, но заявку не удалось убрать из списка. Можно повторить.');}
+};
+
+const _v3Style=document.createElement('style');_v3Style.textContent=`
+#crm-conflict-dialog .btn,#crm-people-dialog .btn,#crm-people-button{border:1px solid #c8d5df;border-radius:8px;padding:10px 14px;background:#f2f6fa;color:#17334b;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+#crm-conflict-dialog .btn-primary,#crm-people-dialog .btn-primary{background:#205a78;color:white;border-color:#205a78}
+#crm-conflict-dialog h3,#crm-people-dialog h3{margin:0 0 12px}
+#crm-people-dialog h4{margin:18px 0 10px;padding-top:12px;border-top:1px solid #dde5eb}
+`;document.head.append(_v3Style);
+
 // ============ INIT ============
 window.onerror = function(msg, src, line, col, err) {
   showToast('⚠️ Ошибка: ' + msg + ' (строка ' + line + ')');
@@ -6130,22 +6799,6 @@ autoDedup(true);
 updateExportBadge();
 render();
 setTimeout(() => loadFromFirebase(), 500);
-
-// Проверка дублей при загрузке (с задержкой)
-setTimeout(() => {
-  const phoneMap = {};
-  clients.forEach(c => {
-    if (!c.phone) return;
-    const clean = c.phone.replace(/\D/g,'').replace(/^[78]/,'');
-    if (clean.length < 9) return;
-    if (!phoneMap[clean]) phoneMap[clean] = [];
-    phoneMap[clean].push(c);
-  });
-  const dups = Object.values(phoneMap).filter(g => g.length > 1);
-  if (dups.length > 0) {
-    showToast(`⚠️ Найдено ${dups.length} дублей! Нажми «🔗 Дубли»`);
-  }
-}, 3000);
 
 </script>
 </body>
