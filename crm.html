@@ -6322,6 +6322,7 @@ function remap(value,maps){
   const out=Object.create(null);
   for(const[k,v]of Object.entries(value)){
     if(k==='studentId'&&maps.students?.[v])out[k]=maps.students[v];
+    else if(k==='subscriptionId'&&maps.subscriptions?.[v])out[k]=maps.subscriptions[v];
     else if(k==='contactId'&&maps.contacts?.[v])out[k]=maps.contacts[v];
     else if(k==='clientId'&&String(v)===maps.sourceId)out[k]=maps.targetId;
     else out[k]=remap(v,maps);
@@ -6331,7 +6332,7 @@ function remap(value,maps){
 function uniqueId(rows,prefix,old){let id=prefix+'_'+old,n=1;while(Object.hasOwn(rows,id))id=prefix+'_'+old+'_'+n++;return id;}
 function mergeCards(target,source,choices={}){
   if(!target||!source||String(target.id)===String(source.id))throw Error('invalid_merge_pair');
-  const out=C.copy(target),conflicts=[],maps={contacts:{},students:{},sourceId:String(source.id),targetId:target.id};
+  const out=C.copy(target),conflicts=[],maps={contacts:{},students:{},subscriptions:{},sourceId:String(source.id),targetId:target.id};
   const minimal=source.integration?.origin==='bot'&&source.integration?.identityOnly===true;
   out.contacts ||= {};
   let anchors=0;
@@ -6360,16 +6361,20 @@ function mergeCards(target,source,choices={}){
     else{dest=uniqueId(out.students,'from'+source.id,sid);out.students[dest]=row;}
     maps.students[sid]=dest;
   }
-  for(const section of ['trials','subscriptions']){
+  // Map subscription IDs before payments and histories that reference them.
+  for(const section of ['subscriptions','trials','payments']){
     if(!source[section])continue;
     out[section] ||= {};
     for(const [id,record]of Object.entries(source[section])){
       const row=remap(record,maps);
-      if(Object.values(out[section]).some(x=>C.equal(x,row)))continue;
-      out[section][uniqueId(out[section],'from'+source.id,id)]=row;
+      // Equal payment values are not proof of the same bank transaction.
+      const equal=section==='payments'?null:Object.entries(out[section]).find(([_,x])=>C.equal(x,row));
+      const dest=equal?equal[0]:uniqueId(out[section],'from'+source.id,id);
+      if(!equal)out[section][dest]=row;
+      if(section==='subscriptions')maps.subscriptions[id]=dest;
     }
   }
-  const handled=new Set(['id','schemaVersion','contacts','students','trials','subscriptions','createdAt','updatedAt','crmHistory','subscriptionHistory','integration']);
+  const handled=new Set(['id','schemaVersion','contacts','students','trials','subscriptions','payments','createdAt','updatedAt','crmHistory','subscriptionHistory','integration']);
   for(const name of ['crmHistory','subscriptionHistory']){
     if(!source[name])continue;
     const records=remap(list(source[name]),maps);
@@ -6769,6 +6774,121 @@ const _v3Style=document.createElement('style');_v3Style.textContent=`
 #crm-conflict-dialog h3,#crm-people-dialog h3{margin:0 0 12px}
 #crm-people-dialog h4{margin:18px 0 10px;padding-top:12px;border-top:1px solid #dde5eb}
 `;document.head.append(_v3Style);
+
+/* Finance view: explicit facts only. Uses the existing revision/three-way writer. */
+(function(C){
+'use strict';
+const statuses={pending:'Ожидает проверки',confirmed:'Подтверждена',cancelled:'Отменена'};
+function validDate(v){return typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;}
+function validate(card,base){
+  for(const[id,s]of Object.entries(card.subscriptions||{})){
+    const old=base.subscriptions?.[id]||{};
+    if(C.equal(s.lessonsRemaining,old.lessonsRemaining)&&C.equal(s.lessonsTotal,old.lessonsTotal))continue;
+    if(s.lessonsRemaining!=null&&(!Number.isSafeInteger(s.lessonsRemaining)||s.lessonsRemaining<0))throw Error('Остаток должен быть целым неотрицательным числом');
+    if(s.lessonsRemaining!=null&&typeof s.lessonsTotal==='number'&&s.lessonsRemaining>s.lessonsTotal)throw Error('Остаток не может превышать количество занятий в абонементе');
+  }
+  for(const[id,p]of Object.entries(card.payments||{})){
+    if(C.equal(p,base.payments?.[id]))continue;
+    if(typeof p.amount!=='number'||!Number.isFinite(p.amount)||p.amount<=0)throw Error('Укажите положительную сумму оплаты числом');
+    if(!validDate(p.date))throw Error('Укажите корректную дату оплаты');
+    if(!p.status)throw Error('Укажите статус оплаты');
+    if(!p.studentId||!card.students?.[p.studentId])throw Error('Выбранный ученик отсутствует в карточке');
+    const sub=p.subscriptionId&&card.subscriptions?.[p.subscriptionId];
+    if(p.subscriptionId&&!sub)throw Error('Выбранный абонемент отсутствует в карточке');
+    if(sub?.studentId&&p.studentId&&sub.studentId!==p.studentId)throw Error('Ученик и абонемент относятся к разным людям');
+  }
+  return card;
+}
+Object.assign(C,{financeStatuses:statuses,validateFinance:validate});
+if(typeof document==='undefined')return;
+const style=document.createElement('style');style.textContent=`
+#crm-finance-dialog{position:fixed;inset:0;z-index:100003;background:#1239;display:flex;align-items:center;justify-content:center;padding:12px}
+#crm-finance-dialog .finance-box{background:white;color:#17334b;width:100%;max-width:850px;max-height:90vh;overflow:auto;padding:24px;border-radius:16px;box-sizing:border-box}
+#crm-finance-dialog h3{margin:0 0 8px}#crm-finance-dialog h4{margin:0 0 12px;overflow-wrap:anywhere}
+#crm-finance-dialog .finance-note{color:#526779;font-size:14px;line-height:1.5}
+#crm-finance-dialog .finance-row{padding:16px;border:1px solid #d7e1e9;border-radius:10px;margin:12px 0}
+#crm-finance-dialog .finance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#crm-finance-dialog label{display:block;font-size:14px}#crm-finance-dialog input,#crm-finance-dialog select,#crm-finance-dialog textarea{display:block;width:100%;box-sizing:border-box;padding:9px;margin-top:5px;border:1px solid #aebdca;border-radius:6px;font:inherit;background:white;color:#17334b}
+#crm-finance-dialog .btn,#crm-finance-button,#crm-finance-ab-button{border:1px solid #c8d5df;border-radius:8px;padding:10px 14px;background:#f2f6fa;color:#17334b;font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin:4px}
+#crm-finance-dialog .btn-primary{background:#205a78;color:white}#crm-finance-dialog .finance-error{color:#ac2424;white-space:pre-wrap}
+@media(max-width:550px){#crm-finance-dialog .finance-box{padding:16px}#crm-finance-dialog .finance-grid{grid-template-columns:1fr}}
+`;document.head.append(style);
+const convert=flatToSchemaV2;flatToSchemaV2=f=>C.validateFinance(convert(f),f.__v2||{});
+const oldModalOpen=_v3ModalOpen;_v3ModalOpen=()=>oldModalOpen()||!!document.getElementById('crm-finance-dialog');
+Object.assign(_v3Labels,{payments:'Оплаты',subscriptions:'Абонементы',amount:'Сумма',lessonsTotal:'Всего занятий',lessonsRemaining:'Остаток занятий',studentId:'Ученик',subscriptionId:'Абонемент',date:'Дата оплаты',note:'Примечание к оплате'});
+function el(tag,text,parent,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;if(parent)parent.append(n);return n;}
+function subLabel(id,s,raw){return (raw.students?.[s.studentId]?.name||'Ученик не указан')+' · '+(s.start||'без даты')+' — '+(s.end||'без даты')+' · абонемент №'+(Object.keys(raw.subscriptions||{}).indexOf(id)+1);}
+function openFinance(id,origin){
+  if(document.getElementById('crm-finance-dialog'))return;
+  const client=clients.find(c=>String(c.id)===String(id));if(!client)return;
+  let base;try{base=flatToSchemaV2(client);}catch(e){_v3Error(e);return;}
+  const original=C.copy(client),raw=C.copy(base),bindings=[];
+  const overlay=el('div',null,document.body);overlay.id='crm-finance-dialog';
+  const box=el('div',null,overlay,'finance-box');box.setAttribute('role','dialog');box.setAttribute('aria-label','Оплаты и остатки');
+  el('h3','Оплаты и остатки · карточка №'+id,box);
+  el('p','Стоимость абонемента и поступившая оплата — разные сведения. Платёж не меняет срок абонемента и количество занятий.',box,'finance-note');
+  function field(host,row,key,label,type='text',options=null){
+    const wrap=el('label',label,host),input=el(options?'select':type==='textarea'?'textarea':'input',null,wrap);
+    input.setAttribute('aria-label',label);input.dataset.field=key;
+    if(options){const values={...options};if(row[key]!=null&&!Object.hasOwn(values,String(row[key])))values[row[key]]=String(row[key])+' (сохранённое значение)';for(const[value,text]of Object.entries(values)){const o=el('option',text,input);o.value=value;}}
+    else if(type!=='textarea'){input.type=type;if(type==='number'){input.min='0';input.step=key==='amount'?'any':'1';}}
+    input.value=row[key]??'';bindings.push({row,key,input,type,initial:input.value,original:C.copy(row[key]),present:Object.hasOwn(row,key)});return input;
+  }
+  el('h4','Абонементы',box);
+  if(!Object.keys(raw.subscriptions||{}).length)el('p','Абонементов пока нет. Их можно добавить через существующую форму абонемента.',box,'finance-note');
+  for(const[sid,s]of Object.entries(raw.subscriptions||{})){
+    const row=el('div',null,box,'finance-row');row.dataset.subscription=sid;
+    el('h4',subLabel(sid,s,raw),row);
+    el('p','Стоимость: '+(s.amount==null?'не указана':s.amount+' ₽')+' · Всего занятий: '+(s.lessonsTotal??'не указано'),row,'finance-note');
+    const input=field(row,s,'lessonsRemaining','Остаток занятий','number');input.placeholder='Не указан';
+    el('p','Пусто — остаток неизвестен. Ноль — занятия закончились. По расписанию остаток не рассчитывается.',row,'finance-note');
+  }
+  el('h4','Оплаты',box);const payments=el('div',null,box);
+  const empty=el('p','Записей об оплатах пока нет. Стоимость абонемента не считается подтверждением оплаты.',payments,'finance-note');
+  const studentOptions={'':'Не указан',...Object.fromEntries(Object.entries(raw.students||{}).map(([sid,s])=>[sid,(s.name||'Без имени')+' · ученик №'+(Object.keys(raw.students||{}).indexOf(sid)+1)]))};
+  const subscriptionOptions={'':'Не привязана',...Object.fromEntries(Object.entries(raw.subscriptions||{}).map(([sid,s])=>[sid,subLabel(sid,s,raw)]))};
+  function paymentRow(pid,p){
+    empty.hidden=true;const row=el('div',null,payments,'finance-row');row.dataset.payment=pid;
+    el('h4','Оплата №'+(payments.querySelectorAll('[data-payment]').length),row);const grid=el('div',null,row,'finance-grid');
+    field(grid,p,'amount','Сумма, ₽','number');field(grid,p,'date','Дата оплаты','date');
+    field(grid,p,'status','Статус оплаты','text',{'':'Не указан',...statuses});
+    field(grid,p,'studentId','Ученик','text',studentOptions);field(grid,p,'subscriptionId','Абонемент','text',subscriptionOptions);
+    field(row,p,'note','Примечание','textarea');
+    el('p','Если запись ошибочная, выберите «Отменена». Она сохранится для проверки.',row,'finance-note');
+  }
+  for(const[pid,p]of Object.entries(raw.payments||{}).sort((a,b)=>String(b[1].date||'').localeCompare(String(a[1].date||''))))paymentRow(pid,p);
+  const add=el('button','Добавить оплату',box,'btn');add.type='button';add.onclick=()=>{
+    const pid='pay_'+crypto.randomUUID().replaceAll('-','');raw.payments ||= {};const p=raw.payments[pid]={status:'pending'};paymentRow(pid,p);
+  };
+  const error=el('p','',box,'finance-error');error.setAttribute('role','alert');
+  const close=()=>{overlay.remove();if(_v3Deferred&&!_v3Dirty())_fbRefetchAndApply();};
+  const cancel=el('button','Отмена',box,'btn');cancel.onclick=close;
+  const submit=el('button','Сохранить изменения',box,'btn btn-primary');
+  submit.onclick=async()=>{
+    error.textContent='';
+    try{
+      for(const f of bindings){if(f.input.value===f.initial){if(f.present)f.row[f.key]=C.copy(f.original);else delete f.row[f.key];continue;}const value=f.input.value.trim();f.row[f.key]=value===''?null:f.type==='number'?Number(value):value;}
+      C.validateFinance(raw,base);
+      const idx=clients.findIndex(c=>String(c.id)===String(id));
+      if(idx<0||!C.equal(clients[idx],original))throw Error('Карточка изменилась. Закройте окно и откройте его заново.');
+      raw.updatedAt=new Date().toISOString();clients[idx]=schemaV2ToFlat(raw);
+      // Close the underlying stale flat form, so it cannot overwrite these values.
+      overlay.remove();if(origin)closeModal(origin);save();await fbSave();
+    }catch(e){error.textContent=e.message;}
+  };
+}
+window._v3Finance=openFinance;
+function formSnapshot(host){return JSON.stringify([...host.querySelectorAll('input,select,textarea')].map(x=>[x.id,x.value,x.checked]));}
+function button(host,id,clientId,origin){
+  if(!host)return;document.getElementById(id)?.remove();const snapshot=formSnapshot(host);
+  const b=el('button','Оплаты и остатки',null);b.id=id;b.type='button';b.onclick=()=>{
+    if(formSnapshot(host)!==snapshot){showToast('Сначала сохраните изменения в открытой форме');return;}
+    openFinance(clientId,origin);
+  };host.prepend(b);
+}
+const edit=openEditModal;openEditModal=id=>{edit(id);button(document.querySelector('#edit-modal .modal-inner'),'crm-finance-button',id,'edit-modal');};
+const abonement=openAbonementModal;openAbonementModal=id=>{abonement(id);button(document.querySelector('#abonement-modal .modal-inner'),'crm-finance-ab-button',id,'abonement-modal');};
+})(CRMv3);
 
 // ============ INIT ============
 window.onerror = function(msg, src, line, col, err) {
