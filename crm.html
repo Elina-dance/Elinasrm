@@ -788,6 +788,28 @@
   </div>
 </div>
 
+<!-- NO-SHOW MODAL -->
+<div class="modal-overlay" id="no-show-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>❌ Не дошли на пробное</span>
+      <button class="btn-close" onclick="closeModal('no-show-modal')">✕</button>
+    </div>
+    <div class="modal-inner">
+      <div style="background:var(--foam);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--wave);font-weight:600;">
+        <strong id="no-show-client-name"></strong>
+      </div>
+      <input type="hidden" id="no-show-client-id">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">Причина:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button type="button" onclick="markNoShow('ignore')" style="background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🙈 Игнор — задача на завтра</button>
+        <button type="button" onclick="markNoShow('sick')" style="background:#e3f2fd;color:#1565c0;border:1.5px solid #1565c0;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🤒 Заболели — задача через неделю</button>
+        <button type="button" onclick="markNoShow('busy')" style="background:#f3e5f5;color:#6a1b9a;border:1.5px solid #6a1b9a;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">⏰ Не успели — задача на завтра</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- BOT CHATS MODAL -->
 <div class="modal-overlay" id="bot-chats-modal">
   <div class="modal">
@@ -4592,6 +4614,7 @@ function renderCalendar() {
               ${!isBought?`<button onclick="quickStatus(${c.id},'bought',0);renderCalendar();" style="flex:1;min-width:70px;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🩷 Купили</button>`:''}
               <button onclick="openLogModal(${c.id});activeTab='calendar';" style="flex:1;min-width:70px;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Итог</button>
               ${c.status==='trial'?`<button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>`:''}
+              ${c.status==='trial'?`<button onclick="openNoShow(${c.id});" style="flex:1;min-width:70px;background:#ffebee;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">❌ Не дошли</button>`:''}
             </div>
           </div>`;
         });
@@ -4873,6 +4896,52 @@ function openMoveTrial(id) {
 
 function setMoveTrial(iso) {
   document.getElementById('move-trial-custom').value = iso;
+}
+
+const NO_SHOW_REASONS = {
+  ignore: { label: 'Игнор', days: 1 },
+  sick:   { label: 'Заболели', days: 7 },
+  busy:   { label: 'Не успели', days: 1 },
+};
+
+function openNoShow(id) {
+  const c = clients.find(cl => cl.id === id);
+  if (!c) return;
+  document.getElementById('no-show-client-name').textContent = c.name;
+  document.getElementById('no-show-client-id').value = id;
+  document.getElementById('no-show-modal').classList.add('open');
+}
+
+// Статус карточки не меняется — она остаётся на месте в календаре пробных,
+// чтобы не потерять её из виду; вместо этого ставится задача на follow-up
+// с датой по причине (игнор/не успели — завтра, заболели — через неделю).
+function markNoShow(reason) {
+  const id = parseInt(document.getElementById('no-show-client-id').value);
+  const c = clients.find(cl => cl.id === id);
+  if (!c) return;
+  const r = NO_SHOW_REASONS[reason];
+  if (!r) return;
+  const d = new Date();
+  d.setDate(d.getDate() + r.days);
+  d.setHours(9, 0, 0, 0);
+  const taskDate = d.toISOString().slice(0, 16);
+  const comment = `❌ Не дошли на пробное (${r.label}). ${c.notes || ''}`.trim();
+  c.tasks = c.tasks || [];
+  c.tasks.push({ id: Date.now(), date: taskDate, comment, done: false });
+  c.nextCall = taskDate;
+  c.updatedAt = new Date().toISOString();
+  if (!c.history) c.history = [];
+  c.history.push({
+    date: new Date().toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
+    result: `❌ Не дошли на пробное — причина: ${r.label}. Задача на ${d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})}.`,
+    newStatus: c.status,
+    nextCall: taskDate,
+  });
+  save();
+  showToast('Задача добавлена');
+  closeModal('no-show-modal');
+  renderCalendar();
+  setTimeout(() => fbSave(), 1500);
 }
 
 function saveMoveTrial() {
