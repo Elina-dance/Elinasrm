@@ -4422,7 +4422,10 @@ function renderCalendar() {
     // работало нормально).
     const isPast = dNorm <= todayNorm;
     if (!isPast && c.status !== 'trial') return;  // будущие: только записанные
-    if (isPast && c.status !== 'trial' && !everAttended(c)) return;
+    // прошедшие и сегодняшние дни: показываем всех, у кого в этот день было пробное,
+    // независимо от текущего статуса (дошли/не дошли/перезапись/что угодно дальше) —
+    // карточка не должна исчезать из календаря, иначе не видно реальное число
+    // записавшихся и дошедших за день.
     const day = d.getDate();
     if (!trialMap[day]) trialMap[day] = [];
     trialMap[day].push(c);
