@@ -4616,8 +4616,8 @@ function renderCalendar() {
               ${!isArrived&&!isBought?`<button onclick="quickStatus(${c.id},'arrived',1);renderCalendar();" style="flex:1;min-width:70px;background:#e8f5e9;color:var(--green);border:1.5px solid var(--green);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">👣 Пришёл</button>`:''}
               ${!isBought?`<button onclick="quickStatus(${c.id},'bought',0);renderCalendar();" style="flex:1;min-width:70px;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">🩷 Купили</button>`:''}
               <button onclick="openLogModal(${c.id});activeTab='calendar';" style="flex:1;min-width:70px;background:var(--foam);color:var(--wave);border:1.5px solid var(--border);border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Итог</button>
-              ${c.status==='trial'?`<button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>`:''}
-              ${c.status==='trial'?`<button onclick="openNoShow(${c.id});" style="flex:1;min-width:70px;background:#ffebee;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">❌ Не дошли</button>`:''}
+              ${!isArrived&&!isBought?`<button onclick="openMoveTrial(${c.id});" style="flex:1;min-width:70px;background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">📅 Перенести</button>`:''}
+              ${!isArrived&&!isBought?`<button onclick="openNoShow(${c.id});" style="flex:1;min-width:70px;background:#ffebee;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;">❌ Не дошли</button>`:''}
             </div>
           </div>`;
         });
@@ -4954,6 +4954,17 @@ function saveMoveTrial() {
   const c = clients.find(cl => cl.id === id);
   if (!c) return;
   c.trial = newDate;
+  if (c.status !== 'arrived' && c.status !== 'bought') {
+    c.status = 'trial';
+    c.nextCall = '';
+    if (!c.history) c.history = [];
+    c.history.push({
+      date: new Date().toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
+      result: `📅 Пробное перенесено на ${new Date(newDate).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}.`,
+      newStatus: 'trial',
+      nextCall: '',
+    });
+  }
   save();
   showToast('📅 Дата пробного перенесена');
   setTimeout(() => fbSave(), 2000);
