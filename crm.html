@@ -4572,17 +4572,19 @@ function renderCalendar() {
       Object.values(byGroup).forEach(arr=>arr.sort((a,b)=>new Date(a.trial)-new Date(b.trial)));
 
       const arrivedCnt = dayClients.filter(c=>everAttended(c)).length;
-      const trialCnt = dayClients.filter(c=>c.status==='trial').length;
+      const noShowCnt = dayClients.filter(c=>!!c.noShowReason && c.status!=='arrived' && c.status!=='bought').length;
+      const trialCnt = dayClients.filter(c=>c.status==='trial' && !c.noShowReason).length;
       const titleIcon = isDayPast ? (arrivedCnt>0?'✅':'⚠️') : '📅';
       const titleParts = [];
-      if (!isDayPast) titleParts.push(`${trialCnt} пробных`);
+      if (!isDayPast) titleParts.push(`${dayClients.length} пробных`);
       if (isDayPast && arrivedCnt>0) titleParts.push(`${arrivedCnt} пришли`);
+      if (isDayPast && noShowCnt>0) titleParts.push(`${noShowCnt} не дошли`);
       if (isDayPast && trialCnt>0) titleParts.push(`${trialCnt} не отмечено`);
       const titleSuffix = titleParts.join(' · ');
 
       html+=`<div style="background:white;border-radius:14px;padding:14px;box-shadow:0 1px 6px rgba(0,0,0,0.07);">
         <div style="font-size:14px;font-weight:800;color:var(--ocean);margin-bottom:${isDayPast&&trialCnt>0?8:14}px;text-transform:capitalize;">${titleIcon} ${dateStr} · ${titleSuffix}</div>
-        ${isDayPast&&trialCnt>0?`<div style="background:#fff3e0;border-radius:8px;padding:8px 12px;font-size:11px;color:#e65100;font-weight:600;margin-bottom:14px;">⚠️ Эти пробные не отмечены — нажми «👣 Пришёл», «🩷 Купили» или измени статус</div>`:''}
+        ${isDayPast&&trialCnt>0?`<div style="background:#fff3e0;border-radius:8px;padding:8px 12px;font-size:11px;color:#e65100;font-weight:600;margin-bottom:14px;">⚠️ Эти пробные не отмечены — нажми «👣 Пришёл», «🩷 Купили» или «❌ Не дошли»</div>`:''}
       `;
 
       CAL_GROUP_ORDER.forEach(g=>{
@@ -4597,18 +4599,20 @@ function renderCalendar() {
           const trialMsg = buildTrialMsg(c);
           const isArrived = c.status === 'arrived';
           const isBought = c.status === 'bought';
-          const isUnmarked = c.status === 'trial' && isDayPast;
-          const cardBg = isBought ? '#fff5f7' : isArrived ? '#f1f8e9' : isUnmarked ? '#fffde7' : '#fafafa';
-          const cardBd = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isUnmarked ? '#f57f17' : '#00acc1';
-          const timeIcon = isBought ? '🩷' : isArrived ? '✓' : isUnmarked ? '?' : '⏰';
-          const timeBg = isBought ? 'var(--pink-bg)' : isArrived ? '#e8f5e9' : isUnmarked ? '#fff3e0' : '#e0f7fa';
-          const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isUnmarked ? '#e65100' : '#00838f';
+          const isNoShow = !!c.noShowReason && !isArrived && !isBought;
+          const isUnmarked = c.status === 'trial' && isDayPast && !isNoShow;
+          const cardBg = isBought ? '#fff5f7' : isArrived ? '#f1f8e9' : isNoShow ? '#fff3e0' : isUnmarked ? '#fffde7' : '#fafafa';
+          const cardBd = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#f57f17' : '#00acc1';
+          const timeIcon = isBought ? '🩷' : isArrived ? '✓' : isNoShow ? '✗' : isUnmarked ? '?' : '⏰';
+          const timeBg = isBought ? 'var(--pink-bg)' : isArrived ? '#e8f5e9' : isNoShow ? '#ffe0b2' : isUnmarked ? '#fff3e0' : '#e0f7fa';
+          const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#e65100' : '#00838f';
           html+=`<div style="background:${cardBg};border-radius:10px;padding:10px 12px;margin-bottom:7px;border-left:3px solid ${cardBd};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
               <div style="font-weight:700;font-size:13px;flex:1;padding-right:6px;">${c.name}</div>
               ${timeStr?`<div style="background:${timeBg};color:${timeClr};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;">${timeIcon} ${timeStr}</div>`:''}
             </div>
             ${sSt?`<div style="display:inline-block;${sSt.pill};border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;margin-bottom:5px;">${sSt.label}</div>`:''}
+            ${isNoShow?`<div style="display:inline-block;background:#ffe0b2;color:#e65100;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;margin-bottom:5px;margin-left:5px;">❌ Не пришли — ${c.noShowReason}</div>`:''}
             ${c.channel?`<div style="display:inline-block;background:#e0f7fa;color:#00838f;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;margin-bottom:5px;margin-left:5px;">📣 ${c.channel}</div>`:''}
             ${c.notes?`<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:7px;background:white;border-radius:6px;padding:6px 8px;">${c.notes}</div>`:''}
             ${contactButtons(c, true, trialMsg)}
@@ -4932,6 +4936,8 @@ function markNoShow(reason) {
   c.tasks = c.tasks || [];
   c.tasks.push({ id: Date.now(), date: taskDate, comment, done: false });
   c.nextCall = taskDate;
+  c.noShowReason = r.label;
+  c.noShowAt = new Date().toISOString();
   c.updatedAt = new Date().toISOString();
   if (!c.history) c.history = [];
   c.history.push({
