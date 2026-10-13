@@ -805,6 +805,7 @@
         <button type="button" onclick="markNoShow('ignore')" style="background:#fff3e0;color:#e65100;border:1.5px solid #e65100;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🙈 Игнор — задача на завтра</button>
         <button type="button" onclick="markNoShow('sick')" style="background:#e3f2fd;color:#1565c0;border:1.5px solid #1565c0;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🤒 Заболели — задача через неделю</button>
         <button type="button" onclick="markNoShow('busy')" style="background:#f3e5f5;color:#6a1b9a;border:1.5px solid #6a1b9a;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">⏰ Не успели — задача на завтра</button>
+        <button type="button" onclick="markNoShow('changedmind')" style="background:#fce4ec;color:#ad1457;border:1.5px solid #ad1457;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🙅 Передумали — задача закрывать возражения</button>
       </div>
     </div>
   </div>
@@ -4601,11 +4602,15 @@ function renderCalendar() {
           const isBought = c.status === 'bought';
           const isNoShow = !!c.noShowReason && !isArrived && !isBought;
           const isUnmarked = c.status === 'trial' && isDayPast && !isNoShow;
-          const cardBg = isBought ? '#fff5f7' : isArrived ? '#f1f8e9' : isNoShow ? '#fff3e0' : isUnmarked ? '#fffde7' : '#fafafa';
-          const cardBd = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#f57f17' : '#00acc1';
+          // Нейтральный белый/серый для тех, у кого ещё не отмечено никакое действие —
+          // яркие цвета (зелёный/розовый/оранжевый) остаются только там, где что-то
+          // реально отмечено (пришли/купили/не дошли), чтобы было видно с одного взгляда,
+          // кому ещё ничего не поставили.
+          const cardBg = isBought ? '#fff5f7' : isArrived ? '#f1f8e9' : isNoShow ? '#fff3e0' : '#ffffff';
+          const cardBd = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#cfd8dc' : '#00acc1';
           const timeIcon = isBought ? '🩷' : isArrived ? '✓' : isNoShow ? '✗' : isUnmarked ? '?' : '⏰';
-          const timeBg = isBought ? 'var(--pink-bg)' : isArrived ? '#e8f5e9' : isNoShow ? '#ffe0b2' : isUnmarked ? '#fff3e0' : '#e0f7fa';
-          const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#e65100' : '#00838f';
+          const timeBg = isBought ? 'var(--pink-bg)' : isArrived ? '#e8f5e9' : isNoShow ? '#ffe0b2' : isUnmarked ? '#f5f5f5' : '#e0f7fa';
+          const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#757575' : '#00838f';
           html+=`<div style="background:${cardBg};border-radius:10px;padding:10px 12px;margin-bottom:7px;border-left:3px solid ${cardBd};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
               <div style="font-weight:700;font-size:13px;flex:1;padding-right:6px;">${c.name}</div>
@@ -4906,9 +4911,10 @@ function setMoveTrial(iso) {
 }
 
 const NO_SHOW_REASONS = {
-  ignore: { label: 'Игнор', days: 1 },
-  sick:   { label: 'Заболели', days: 7 },
-  busy:   { label: 'Не успели', days: 1 },
+  ignore:      { label: 'Игнор', days: 1 },
+  sick:        { label: 'Заболели', days: 7 },
+  busy:        { label: 'Не успели', days: 1 },
+  changedmind: { label: 'Передумали', days: 1, taskText: 'Закрывать возражения' },
 };
 
 function openNoShow(id) {
@@ -4932,7 +4938,7 @@ function markNoShow(reason) {
   d.setDate(d.getDate() + r.days);
   d.setHours(9, 0, 0, 0);
   const taskDate = d.toISOString().slice(0, 16);
-  const comment = `❌ Не дошли на пробное (${r.label}). ${c.notes || ''}`.trim();
+  const comment = ((r.taskText ? `❌ ${r.taskText} (${r.label}). ` : `❌ Не дошли на пробное (${r.label}). `) + (c.notes || '')).trim();
   c.tasks = c.tasks || [];
   c.tasks.push({ id: Date.now(), date: taskDate, comment, done: false });
   c.nextCall = taskDate;
