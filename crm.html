@@ -1857,6 +1857,12 @@ function quickStatus(id, status, nextCallDays) {
   clients[idx].status = status;
   clients[idx].nextCall = nextCall;
   clients[idx].updatedAt = new Date().toISOString();
+  // «Пришёл/купил» отменяет более раннюю отметку «не дошли» — иначе на карточке
+  // останутся одновременно противоречивые зелёная и оранжевая метки.
+  if (status === 'arrived' || status === 'bought') {
+    delete clients[idx].noShowReason;
+    delete clients[idx].noShowAt;
+  }
   if (!clients[idx].history) clients[idx].history = [];
   clients[idx].history.push({
     date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
@@ -2105,7 +2111,7 @@ function renderReminders() {
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button onclick="quickStatus(${c.id},'arrived',1)" style="flex:1;background:var(--green-bg);color:var(--green);border:1.5px solid var(--green);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">👣 Дошли</button>
             <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-            <button onclick="markNotArrived(${c.id})" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не пришли</button>
+            <button onclick="openNoShow(${c.id})" style="flex:1;background:var(--orange-bg);color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не пришли</button>
           </div>
           ${c._prevStatus ? `<button onclick="undoStatus(${c.id})" style="width:100%;margin-top:8px;background:#f5f5f5;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">↩️ Отменить</button>` : ''}
         </div>
@@ -2434,6 +2440,10 @@ function changeStatusInline(id, newStatus) {
   clients[idx]._prevNextCall = clients[idx].nextCall || '';
   clients[idx].status = newStatus;
   clients[idx].updatedAt = new Date().toISOString();
+  if (newStatus === 'arrived' || newStatus === 'bought') {
+    delete clients[idx].noShowReason;
+    delete clients[idx].noShowAt;
+  }
   if (!clients[idx].history) clients[idx].history = [];
   clients[idx].history.push({
     date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
@@ -4060,6 +4070,8 @@ function markAsBought(id) {
   clients[idx].status = 'bought';
   clients[idx].nextCall = '';
   clients[idx].updatedAt = new Date().toISOString();
+  delete clients[idx].noShowReason;
+  delete clients[idx].noShowAt;
   if (!clients[idx].history) clients[idx].history = [];
   clients[idx].history.push({
     date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
@@ -4932,6 +4944,11 @@ function markNoShow(reason) {
   const id = parseInt(document.getElementById('no-show-client-id').value);
   const c = clients.find(cl => cl.id === id);
   if (!c) return;
+  if (c.status === 'arrived' || c.status === 'bought') {
+    showToast('Уже отмечено «пришёл» — сначала смени статус, если это ошибка');
+    closeModal('no-show-modal');
+    return;
+  }
   const r = NO_SHOW_REASONS[reason];
   if (!r) return;
   const d = new Date();
@@ -4939,7 +4956,9 @@ function markNoShow(reason) {
   d.setHours(9, 0, 0, 0);
   const taskDate = d.toISOString().slice(0, 16);
   const comment = ((r.taskText ? `❌ ${r.taskText} (${r.label}). ` : `❌ Не дошли на пробное (${r.label}). `) + (c.notes || '')).trim();
-  c.tasks = c.tasks || [];
+  // Повторный клик по причине не дошли заменяет прежнюю незавершённую задачу-напоминание,
+  // а не плодит дубли — оставляем только последнюю актуальную причину.
+  c.tasks = (c.tasks || []).filter(t => t.done || !t.comment || !t.comment.startsWith('❌'));
   c.tasks.push({ id: Date.now(), date: taskDate, comment, done: false });
   c.nextCall = taskDate;
   c.noShowReason = r.label;
@@ -4955,7 +4974,10 @@ function markNoShow(reason) {
   save();
   showToast('Задача добавлена');
   closeModal('no-show-modal');
-  renderCalendar();
+  if (activeTab === 'trial_hub') renderTrialHub();
+  else if (activeTab === 'remind') renderReminders();
+  else if (activeTab === 'calendar') renderCalendar();
+  else render();
   setTimeout(() => fbSave(), 1500);
 }
 
@@ -5022,7 +5044,7 @@ function renderTrialHub() {
         <div style="display:flex;gap:7px;">
           <button onclick="quickStatus(${c.id},'arrived',1)" style="flex:1;background:#e8f5e9;color:var(--green);border:1.5px solid var(--green);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">👣 Пришёл</button>
           <button onclick="quickStatus(${c.id},'bought',0)" style="flex:1;background:var(--pink-bg);color:var(--pink);border:1.5px solid var(--pink);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">🩷 Купили</button>
-          <button onclick="markNotArrived(${c.id})" style="flex:1;background:#fce4ec;color:#c62828;border:1.5px solid #c62828;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не пришёл</button>
+          <button onclick="openNoShow(${c.id})" style="flex:1;background:#fce4ec;color:#c62828;border:1.5px solid #c62828;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;">❌ Не пришёл</button>
         </div>
       </div>`;
     });
@@ -5063,26 +5085,6 @@ function renderTrialHub() {
     </div>`;
   }
   el.innerHTML = html;
-}
-
-function markNotArrived(id) {
-  const idx = clients.findIndex(x=>x.id===id); if(idx<0) return;
-  clients[idx]._prevStatus = clients[idx].status;
-  clients[idx]._prevNextCall = clients[idx].nextCall||'';
-  clients[idx].status = 'reschedule';
-  clients[idx].nextCall = defaultNextCall(1); // следующий день в 9:00
-  clients[idx].updatedAt = new Date().toISOString();
-  if(!clients[idx].history) clients[idx].history=[];
-  clients[idx].history.push({
-    date: new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}),
-    result:'❌ Не пришли на пробное. Позвонить завтра в 9:00.',
-    newStatus:'reschedule', nextCall: clients[idx].nextCall
-  });
-  save(); updateExportBadge();
-  showToast('Не пришли — задача на завтра в 9:00 📅');
-  if(activeTab==='trial_hub') renderTrialHub();
-  else if(activeTab==='remind') renderReminders();
-  else render();
 }
 
 // ============ ПРОСРОЧЕННЫЕ ============
