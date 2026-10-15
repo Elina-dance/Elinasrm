@@ -231,7 +231,7 @@
   </div>
   <div class="search-bar">
     <div style="display:flex;gap:8px;">
-      <input type="text" id="search" placeholder="🔍 Поиск по имени, телефону, группе..." oninput="renderCurrentTab()" onkeydown="if(event.key==='Enter')renderCurrentTab()" style="flex:1;">
+      <input type="text" id="search" placeholder="🔍 Имя, телефон, @username, Telegram ID, № карточки..." oninput="renderCurrentTab()" onkeydown="if(event.key==='Enter')renderCurrentTab()" style="flex:1;">
       <button onclick="renderCurrentTab()" style="background:var(--wave);color:white;border:none;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer;flex-shrink:0;">🔍</button>
       <button onclick="document.getElementById('search').value='';renderCurrentTab()" id="clear-search" style="display:none;background:#e0e0e0;color:var(--text);border:none;border-radius:10px;padding:10px 12px;font-size:14px;cursor:pointer;flex-shrink:0;">✕</button>
     </div>
@@ -1382,15 +1382,35 @@ function getSearchQuery() {
   return (document.getElementById('search')?.value || '').toLowerCase().trim();
 }
 
-function matchesSearch(c, q) {
-  if (!q) return true;
-  return (c.name||'').toLowerCase().includes(q)
-    || (c.phone||'').includes(q)
-    || (c.group||'').toLowerCase().includes(q)
-    || (c.notes||'').toLowerCase().includes(q)
-    || (c.channel||'').toLowerCase().includes(q)
-    || (c.abChild||'').toLowerCase().includes(q);
+// Telegram profile is an explicitly labelled display fallback, not a contact-name write.
+function crmTelegramFallback(raw) {
+  const contacts=Object.values(raw.contacts||{}), students=Object.values(raw.students||{});
+  if(raw.displayName||raw.legacy?.name||contacts.some(c=>String(c.name||'').trim())||students.some(c=>String(c.name||'').trim()))return '';
+  for(const c of contacts){const t=c.channels?.telegram||{};
+    if(String(t.displayName||'').trim())return String(t.displayName).trim()+' (имя из Telegram)';
+    if(t.username)return '@'+String(t.username).replace(/^@/,'')+' (Telegram)';
+  }
+  return '';
 }
+function crmNameHtml(c) {
+  return String(c.name||'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+}
+function crmSearchValues(c) {
+  const raw=c.__v2||{}, values=[c.id,c.name,c.phone,c.group,c.notes,c.channel,c.abChild,raw.displayName];
+  for(const contact of Object.values(raw.contacts||{})){
+    values.push(contact.name,contact.phone);
+    const tg=contact.channels?.telegram||{};
+    values.push(tg.displayName,tg.username,tg.externalId);
+  }
+  for(const student of Object.values(raw.students||{}))values.push(student.name);
+  return values.filter(v=>v!=null).map(v=>String(v).toLowerCase());
+}
+function matchesSearch(c, q) {
+  q=String(q||'').toLowerCase().trim();if(!q)return true;
+  const normalized=q.replace(/^(?:@|№|#)\s*/,'');
+  return crmSearchValues(c).some(v=>v.includes(q)||(normalized&&v.includes(normalized)));
+}
+
 function defaultNextCall(daysFromNow) {
   const d = new Date();
   d.setDate(d.getDate() + (daysFromNow || 0));
@@ -1561,9 +1581,7 @@ function filterClients() {
     else if (activeTab==='overdue') matchTab = isOverdue(c);
     else if (activeTab==='obzvon') matchTab = c.status !== 'bought' && c.status !== 'declined';
     else matchTab = c.status === activeTab;
-    const matchSearch = !q || c.name.toLowerCase().includes(q) ||
-      (c.phone||'').toLowerCase().includes(q) || (c.group||'').toLowerCase().includes(q) ||
-      (c.notes||'').toLowerCase().includes(q) || (c.channel||'').toLowerCase().includes(q);
+    const matchSearch = matchesSearch(c,q);
     return matchTab && matchSearch;
   });
 }
@@ -1706,7 +1724,7 @@ function render() {
 
     html += `<div class="card ${s.cardCls} ${od?'overdue-card':''}">
       <div class="card-header">
-        <div class="card-name">${c.name}</div>
+        <div class="card-name">${crmNameHtml(c)}</div>
         <div class="status-pill" style="${s.pill}">${s.label}</div>
       </div>
       <div class="card-meta">
@@ -1952,7 +1970,7 @@ function callCardHtml(c, isOv) {
     : `<span style="background:var(--yellow-bg);color:var(--orange);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">📅 ${isLater?'Обещали вернуться сегодня':'Звонок сегодня в '+fmtTime(c.nextCall)}</span>`;
   return `<div class="remind-card" ${border}>
         <div class="remind-card-top">
-          <div class="remind-name">${c.name}</div>
+          <div class="remind-name">${crmNameHtml(c)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
             <span style="${s.pill};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${s.label}</span>
             <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
@@ -2087,7 +2105,7 @@ function renderReminders() {
 
       html += `<div class="remind-card" style="${isArrived?'border:2px solid var(--green);background:var(--green-bg)':''}">
         <div class="remind-card-top">
-          <div class="remind-name">${c.name}</div>
+          <div class="remind-name">${crmNameHtml(c)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
             <div class="remind-time">⏰ ${fmtTime(c.trial)}</div>
             <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
@@ -2140,7 +2158,7 @@ function renderReminders() {
             <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
           </div>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${c.name}${c.abMom?' · мама '+c.abMom:''} · ${c.abGroup||c.group||''}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${crmNameHtml(c)}${c.abMom?' · мама '+c.abMom:''} · ${c.abGroup||c.group||''}</div>
         <div style="background:var(--orange-bg);border-radius:8px;padding:7px 10px;margin-bottom:8px;font-size:12px;color:var(--orange);font-weight:600;">
           📅 Абонемент закончился: ${endStr}
         </div>
@@ -2192,7 +2210,7 @@ function renderReminders() {
     newUntouched.forEach(c => {
       html += `<div class="remind-card" style="border:2px solid #a5d6a7;background:#f1f8e9;">
         <div class="remind-card-top">
-          <div class="remind-name">${c.name}</div>
+          <div class="remind-name">${crmNameHtml(c)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
             <span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">🆕 Новый</span>
             <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
@@ -2235,7 +2253,7 @@ function renderReminders() {
       const msg = buildFollowupMsg(c);
       html += `<div class="remind-card" style="border:2px solid #a5d6a7;background:#f1f8e9;">
         <div class="remind-card-top">
-          <div class="remind-name">${c.name}</div>
+          <div class="remind-name">${crmNameHtml(c)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
             <span style="background:var(--green-bg);color:var(--green);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">👣 Дошли</span>
             <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
@@ -2372,7 +2390,7 @@ function renderReminders() {
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="font-size:14px;">${typeIcon}</div>
             <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div>
+              <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${crmNameHtml(c)}</div>
               <div style="font-size:11px;color:var(--muted);">${typeLabel}${timeStr?' в '+timeStr:''} · <span style="${s?.pill||''};border-radius:4px;padding:1px 5px;">${s?.label||c.status}</span></div>
             </div>
           </div>
@@ -2627,7 +2645,7 @@ function renderObzvon() {
 
       html += `<div style="background:white;border-radius:12px;padding:14px;margin-bottom:8px;border-left:4px solid ${od?'var(--red)':s?.pill?.match(/color:([^;]+)/)?.[1]||'#ccc'};box-shadow:0 1px 5px rgba(0,0,0,0.07);${od?'background:var(--red-bg)':''}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;">
-          <div style="font-weight:700;font-size:14px;flex:1;line-height:1.3;">${od?'🔴 ':''}${c.name}</div>
+          <div style="font-weight:700;font-size:14px;flex:1;line-height:1.3;">${od?'🔴 ':''}${crmNameHtml(c)}</div>
           ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:6px;padding:2px 7px;font-size:10px;font-weight:600;white-space:nowrap;">${c.group}</span>`:''}
         </div>
         ${c.notes?`<div style="font-size:12px;color:var(--muted);background:#f9fafb;padding:6px 10px;border-radius:7px;margin-bottom:8px;line-height:1.5;">${c.notes.slice(0,100)}${c.notes.length>100?'…':''}</div>`:''}
@@ -2667,7 +2685,7 @@ function renderObzvon() {
       const waPhone = c.phone && !c.phone.startsWith('@') ? c.phone.replace(/\D/g,'') : null;
       html += `<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:7px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <div style="flex:1;font-size:13px;font-weight:600;min-width:120px;">${c.name}</div>
+          <div style="flex:1;font-size:13px;font-weight:600;min-width:120px;">${crmNameHtml(c)}</div>
           ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:5px;padding:1px 6px;font-size:10px;font-weight:600;">${c.group}</span>`:''}
           <span style="background:var(--yellow-bg);color:var(--orange);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;">📅 ${nextStr}</span>
         </div>
@@ -2690,7 +2708,7 @@ function renderObzvon() {
     bought.forEach(c => {
       const waPhone = c.phone && !c.phone.startsWith('@') ? c.phone.replace(/\D/g,'') : null;
       html += `<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;">
-        <div style="flex:1;font-size:13px;font-weight:600;">${c.name}</div>
+        <div style="flex:1;font-size:13px;font-weight:600;">${crmNameHtml(c)}</div>
         ${c.group?`<span style="background:#f0ebff;color:var(--purple);border-radius:5px;padding:1px 6px;font-size:10px;font-weight:600;">${c.group}</span>`:''}
         ${waPhone?`<a href="tel:${waPhone}" style="background:var(--green-bg);color:var(--green);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;text-decoration:none;">📞</a>`:''}
         <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:7px;padding:5px 8px;font-size:11px;cursor:pointer;">⚙️</button>
@@ -2738,7 +2756,7 @@ function renderTable() {
     </select>`;
     return `<tr style="${rowBg};cursor:pointer;" onclick="openEditModal(${c.id})">
       <td style="color:#aaa;text-align:center;padding:7px 6px;border-bottom:1px solid #eee;">${i+1}</td>
-      <td style="font-weight:600;color:var(--ocean);padding:7px 10px;border-bottom:1px solid #eee;min-width:150px;">${od?'🔴 ':''}${c.name}</td>
+      <td style="font-weight:600;color:var(--ocean);padding:7px 10px;border-bottom:1px solid #eee;min-width:150px;">${od?'🔴 ':''}${crmNameHtml(c)}</td>
       <td style="padding:7px 10px;border-bottom:1px solid #eee;white-space:nowrap;">${c.phone||'—'}</td>
       <td style="padding:7px 8px;border-bottom:1px solid #eee;" onclick="event.stopPropagation()">${statusSelect}</td>
       <td style="padding:7px 8px;border-bottom:1px solid #eee;white-space:nowrap;">${c.group||'—'}</td>
@@ -3569,7 +3587,7 @@ function setLeftTaskPreset(days) {
 function openLeftModal(id) {
   leftTargetId = id;
   const c = clients.find(x => x.id === id); if (!c) return;
-  document.getElementById('left-client-name').textContent = c.abChild ? `${c.abChild} (${c.name})` : c.name;
+  document.getElementById('left-client-name').textContent = c.abChild ? `${c.abChild} (${crmNameHtml(c)})` : c.name;
   document.querySelectorAll('.leave-reason-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('left-other-wrap').style.display = 'none';
   document.getElementById('left-other').value = '';
@@ -3983,7 +4001,7 @@ function renderActive() {
     if (noData.length) {
       html += `<div style="background:#fff8e1;border:1.5px dashed var(--yellow);border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;color:#c57a00;margin-bottom:10px;">⚠️ Заполни данные абонемента (${noData.length})</div>`;
       noData.forEach(c=>{
-        html += `<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;"><div style="flex:1;font-size:13px;font-weight:600;">${c.name}</div><span style="background:#f0ebff;color:var(--purple);border-radius:5px;padding:1px 6px;font-size:10px;font-weight:600;">${c.group||''}</span><button onclick="openAbonementModal(${c.id})" style="background:var(--pink);color:white;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">+ Заполнить</button></div>`;
+        html += `<div style="background:white;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;"><div style="flex:1;font-size:13px;font-weight:600;">${crmNameHtml(c)}</div><span style="background:#f0ebff;color:var(--purple);border-radius:5px;padding:1px 6px;font-size:10px;font-weight:600;">${c.group||''}</span><button onclick="openAbonementModal(${c.id})" style="background:var(--pink);color:white;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">+ Заполнить</button></div>`;
       });
       html += `</div>`;
     }
@@ -4004,7 +4022,7 @@ function renderActive() {
         const waPhone=c.phone&&!c.phone.startsWith('@')?c.phone.replace(/\D/g,''):null;
         html += `<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-left:4px solid ${isEnding?'var(--orange)':'var(--pink)'};">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-            <div><div style="font-size:15px;font-weight:800;color:var(--ocean);">${c.abChild}</div><div style="font-size:11px;color:var(--muted);">${c.name}${c.abMom?' · мама '+c.abMom:''}</div>${c.abBirthday?`<div style="font-size:11px;color:var(--wave);margin-top:1px;">🎂 ${calcAge(c.abBirthday)}</div>`:''}</div>
+            <div><div style="font-size:15px;font-weight:800;color:var(--ocean);">${c.abChild}</div><div style="font-size:11px;color:var(--muted);">${crmNameHtml(c)}${c.abMom?' · мама '+c.abMom:''}</div>${c.abBirthday?`<div style="font-size:11px;color:var(--wave);margin-top:1px;">🎂 ${calcAge(c.abBirthday)}</div>`:''}</div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
               <span style="background:var(--pink-bg);color:var(--pink);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;">${c.abGroup||c.group||'—'}</span>
               <span style="background:${abTypeLabel(c.abType).bg};color:${abTypeLabel(c.abType).color};border-radius:8px;padding:3px 9px;font-size:10px;font-weight:700;white-space:nowrap;">${abTypeLabel(c.abType).label}</span>
@@ -4247,7 +4265,7 @@ function renderMsgTasksTab() {
     <div style="display:flex;gap:10px;align-items:flex-start;">
       <input type="checkbox" ${t.sent?'checked':''} onclick="event.stopPropagation();toggleMsgTaskSent(${c.id},${t.id})" style="width:22px;height:22px;margin-top:2px;flex-shrink:0;cursor:pointer;">
       <div style="flex:1;cursor:pointer;" onclick="openEditModal(${c.id})">
-        <div style="font-weight:700;font-size:13px;margin-bottom:3px;${t.sent?'text-decoration:line-through;color:var(--muted);':''}">${c.name}</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px;${t.sent?'text-decoration:line-through;color:var(--muted);':''}">${crmNameHtml(c)}</div>
         <div style="font-size:13px;color:${t.sent?'var(--muted)':'#4a148c'};line-height:1.5;">${t.text}</div>
         <div style="font-size:10px;color:var(--muted);margin-top:4px;">${t.sent?'✅ Отправлено '+fmtDT(t.sentAt):'создано '+fmtDT(t.createdAt)}</div>
       </div>
@@ -4625,7 +4643,7 @@ function renderCalendar() {
           const timeClr = isBought ? 'var(--pink)' : isArrived ? 'var(--green)' : isNoShow ? '#e65100' : isUnmarked ? '#757575' : '#00838f';
           html+=`<div style="background:${cardBg};border-radius:10px;padding:10px 12px;margin-bottom:7px;border-left:3px solid ${cardBd};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
-              <div style="font-weight:700;font-size:13px;flex:1;padding-right:6px;">${c.name}</div>
+              <div style="font-weight:700;font-size:13px;flex:1;padding-right:6px;">${crmNameHtml(c)}</div>
               ${timeStr?`<div style="background:${timeBg};color:${timeClr};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;">${timeIcon} ${timeStr}</div>`:''}
             </div>
             ${sSt?`<div style="display:inline-block;${sSt.pill};border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;margin-bottom:5px;">${sSt.label}</div>`:''}
@@ -4788,7 +4806,7 @@ function renderLaterCalendar() {
         const timeStr = fmtTime(c.nextCall);
         html+=`<div class="remind-card" style="border:2px solid #b388ff;background:#f9f5ff;margin-bottom:10px;">
           <div class="remind-card-top">
-            <div class="remind-name">${c.name}</div>
+            <div class="remind-name">${crmNameHtml(c)}</div>
             <div style="display:flex;gap:6px;align-items:center;">
               <div style="background:${isDayPast?'var(--red-bg)':'#f3e8ff'};color:${isDayPast?'var(--red)':'#7c4dff'};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;">${timeStr!=='—'?'⏰ '+timeStr:'без времени'}</div>
               <button onclick="openEditModal(${c.id})" style="background:var(--foam);color:var(--wave);border:none;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">⚙️</button>
@@ -4844,7 +4862,7 @@ function renderLaterCalendar() {
 
       html += `<div class="card" style="border-left:4px solid var(--purple);background:var(--purple-bg);">
         <div class="card-header">
-          <div class="card-name">${c.name}</div>
+          <div class="card-name">${crmNameHtml(c)}</div>
           <div style="background:var(--purple);color:white;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;">⏳</div>
         </div>
         <div class="card-meta">
@@ -5035,7 +5053,7 @@ function renderTrialHub() {
       const waPhone = c.phone && !c.phone.startsWith('@') ? c.phone.replace(/\D/g,'') : null;
       html += `<div style="background:white;border-radius:12px;padding:14px;margin-bottom:8px;box-shadow:0 1px 5px rgba(0,0,0,0.07);border-left:4px solid #00acc1;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-          <div style="font-weight:700;font-size:14px;flex:1;">${c.name}</div>
+          <div style="font-weight:700;font-size:14px;flex:1;">${crmNameHtml(c)}</div>
           <span style="background:#e0f7fa;color:#00838f;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">${c.group||''}</span>
         </div>
         <div style="font-size:12px;color:#00838f;font-weight:600;margin-bottom:8px;">📅 ${trialStr}</div>
@@ -5059,7 +5077,7 @@ function renderTrialHub() {
       const nextStr = c.nextCall ? new Date(c.nextCall).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'}) : '';
       html += `<div style="background:white;border-radius:12px;padding:14px;margin-bottom:8px;box-shadow:0 1px 5px rgba(0,0,0,0.07);border-left:4px solid var(--green);">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-          <div style="font-weight:700;font-size:14px;flex:1;">${c.name}</div>
+          <div style="font-weight:700;font-size:14px;flex:1;">${crmNameHtml(c)}</div>
           <span style="background:#e8f5e9;color:var(--green);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">${c.group||''}</span>
         </div>
         ${nextStr?`<div style="font-size:12px;color:var(--orange);font-weight:600;margin-bottom:8px;">📅 Позвонить: ${nextStr}</div>`:''}
@@ -5116,7 +5134,7 @@ function renderOverdueHub() {
 
     html += `<div class="card overdue-card">
       <div class="card-header">
-        <div class="card-name">${c.name}</div>
+        <div class="card-name">${crmNameHtml(c)}</div>
         <div class="status-pill" style="${s.pill}">${s.label}</div>
       </div>
       <div class="card-meta">
@@ -5204,7 +5222,7 @@ function renderDeclinedHub() {
 
     html += `<div style="background:white;border-radius:12px;padding:14px;margin-bottom:8px;box-shadow:0 1px 5px rgba(0,0,0,0.07);border-left:4px solid #9e9e9e;opacity:0.9;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-        <div style="font-weight:700;font-size:14px;flex:1;">${c.name}</div>
+        <div style="font-weight:700;font-size:14px;flex:1;">${crmNameHtml(c)}</div>
         <span style="background:#f5f5f5;color:var(--gray);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600;">${c.group||''}</span>
       </div>
       ${updDate?`<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">📅 ${updDate}</div>`:''}
@@ -5290,7 +5308,7 @@ function previewImport() {
     html += `<div style="background:#e8f5e9;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;color:#1a5c3a;font-weight:600;">✅ Будет добавлено: ${toAdd.length} карточек</div>`;
     html += '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
     toAdd.forEach(c => {
-      html += `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;"><strong>${c.name}</strong>${c.phone ? ' · ' + c.phone : ''}${c.group ? ' · ' + c.group : ''}</div>`;
+      html += `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;"><strong>${crmNameHtml(c)}</strong>${c.phone ? ' · ' + c.phone : ''}${c.group ? ' · ' + c.group : ''}</div>`;
     });
     html += '</div>';
   }
@@ -5298,7 +5316,7 @@ function previewImport() {
     html += `<div style="background:#fff3e0;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;color:#7a4000;font-weight:600;">⚠️ Пропущено (дубли): ${skipped.length}</div>`;
     html += '<div style="max-height:100px;overflow-y:auto;border:1px solid #ffe0b2;border-radius:8px;margin-top:4px;">';
     skipped.forEach(c => {
-      html += `<div style="padding:5px 10px;border-bottom:1px solid #ffe0b2;font-size:11px;color:#7a4000;">${c.name} — ${c._reason}</div>`;
+      html += `<div style="padding:5px 10px;border-bottom:1px solid #ffe0b2;font-size:11px;color:#7a4000;">${crmNameHtml(c)} — ${c._reason}</div>`;
     });
     html += '</div>';
   }
@@ -6551,6 +6569,7 @@ schemaV2ToFlat=raw=>{
   const f=_v3Project(normalized);f.__v2=raw;
   for(const[k,v]of Object.entries(raw.uiExtras||{}))if(!['id','schemaVersion','__v2'].includes(k))f[k]=CRMv3.copy(v);
   if(!Object.keys(raw.students||{}).length)f.name=raw.displayName||raw.legacy?.name||f.name;
+  const tgName=crmTelegramFallback(raw);if(tgName)f.name=tgName;
   const sub=Object.values(raw.subscriptions||{}).sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
   const subStudent=raw.students?.[sub?.studentId];if(subStudent){f.abChild=subStudent.name||'';f.abGroup=subStudent.group||'';f.abBirthday=subStudent.birthDate;}
   f.abRenewalSms=sub?.renewalSms||raw.uiExtras?.abRenewalSms||raw.legacy?.abRenewalSms||'';
