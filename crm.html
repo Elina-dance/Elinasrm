@@ -6236,6 +6236,30 @@ function keys(card) {
   }
   return out;
 }
+// Search keys v1; exactly the same normalization as core/crm_search.py.
+function searchNameKeys(value) {
+  const n=(String(value||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я0-9]+/g)||[]).join(' ');
+  return [...new Set([n,...n.split(' ')].filter(s=>s.length>=2&&new TextEncoder().encode(s).length<=60).map(s=>Array.from(new TextEncoder().encode(s),b=>b.toString(16).padStart(2,'0')).join('')))];
+}
+function searchUsername(value) {
+  const n=String(value||'').trim().toLowerCase().replace(/^https?:\/\/(?:www\.)?t\.me\//,'').replace(/^@+/,'');
+  return /^[a-z0-9_]{1,64}$/.test(n)?n:null;
+}
+function searchKeys(card) {
+  const out=Object.create(null), contacts=card?.contacts||{};
+  const add=(kind,k,ids)=>{if(ids.length)out['search/'+kind+'/'+k]=[...new Set([...(out['search/'+kind+'/'+k]||[]),...ids])];};
+  for(const[cid,c]of Object.entries(contacts)) {
+    for(const k of searchNameKeys(c.name))add('contactNames',k,[cid]);
+    const u=searchUsername(c.channels?.telegram?.username);if(u)add('telegramUsernames',u,[cid]);
+    const legacy=String(c.phone||'').trim();
+    if(legacy.startsWith('@')||legacy.startsWith('https://t.me/')||legacy.startsWith('http://t.me/')){const old=searchUsername(legacy);if(old)add('telegramUsernames',old,[cid]);}
+  }
+  for(const s of Object.values(card?.students||{})) {
+    const ids=Object.hasOwn(contacts,s.contactId)?[s.contactId]:Object.keys(contacts);
+    for(const k of searchNameKeys(s.name))add('studentNames',k,ids);
+  }
+  return out;
+}
 function refs(node) {
   if (node == null) return [];
   const rows = node.clientId != null ? [node] : Object.values(node.refs || {});
@@ -6373,7 +6397,7 @@ function convert(flat, project, parseName) {
   next.updatedAt=flat.updatedAt || prev.updatedAt || new Date().toISOString();
   return next;
 }
-root.CRMv3={today,copy,stable,equal,phone,key,keys,refs,refsNode,threeWay,convert};
+root.CRMv3={searchKeys,searchNameKeys,searchUsername,today,copy,stable,equal,phone,key,keys,refs,refsNode,threeWay,convert};
 if (typeof module!=='undefined') module.exports=root.CRMv3;
 })(typeof globalThis!=='undefined' ? globalThis : window);
 
@@ -6597,11 +6621,11 @@ async function _v3Indexes(replacements,oldCards,patch){
   const touched=new Set();
   for(const[id,card]of Object.entries(replacements)){
     patch['clients/'+id]=card;
-    [...Object.keys(CRMv3.keys(oldCards[id])),...Object.keys(CRMv3.keys(card))].forEach(k=>touched.add(k));
+    [...Object.keys(({...CRMv3.keys(oldCards[id]),...CRMv3.searchKeys(oldCards[id])})),...Object.keys(({...CRMv3.keys(card),...CRMv3.searchKeys(card)}))].forEach(k=>touched.add(k));
   }
   for(const k of touched){
     let rows=CRMv3.refs(await _v3Get('indexes/'+k)).filter(r=>!Object.hasOwn(replacements,r.clientId));
-    for(const[id,card]of Object.entries(replacements))for(const cid of(CRMv3.keys(card)[k]||[]))rows.push({clientId:id,contactId:cid});
+    for(const[id,card]of Object.entries(replacements))for(const cid of(({...CRMv3.keys(card),...CRMv3.searchKeys(card)})[k]||[]))rows.push({clientId:id,contactId:cid});
     patch['indexes/'+k]=CRMv3.refsNode(rows);
   }
 }
