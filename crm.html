@@ -806,6 +806,7 @@
         <button type="button" onclick="markNoShow('sick')" style="background:#e3f2fd;color:#1565c0;border:1.5px solid #1565c0;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🤒 Заболели — задача через неделю</button>
         <button type="button" onclick="markNoShow('busy')" style="background:#f3e5f5;color:#6a1b9a;border:1.5px solid #6a1b9a;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">⏰ Не успели — задача на завтра</button>
         <button type="button" onclick="markNoShow('changedmind')" style="background:#fce4ec;color:#ad1457;border:1.5px solid #ad1457;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">🙅 Передумали — задача закрывать возражения</button>
+        <button type="button" onclick="markNoShow('away')" style="background:#e0f2f1;color:#00695c;border:1.5px solid #00695c;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">✈️ Уехали — задача через неделю</button>
       </div>
     </div>
   </div>
@@ -4945,6 +4946,7 @@ const NO_SHOW_REASONS = {
   sick:        { label: 'Заболели', days: 7 },
   busy:        { label: 'Не успели', days: 1 },
   changedmind: { label: 'Передумали', days: 1, taskText: 'Закрывать возражения' },
+  away:        { label: 'Уехали', days: 7 },
 };
 
 function openNoShow(id) {
